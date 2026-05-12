@@ -1,0 +1,45 @@
+{{define "calling.html"}}
+<section class="calling-points" id="results">
+  <h2>{{.TrainID}} · {{.Operator}}</h2>
+  <p class="calling-subtitle">Select your destination or a change point</p>
+
+  {{if not .Points}}
+  <p class="empty">No onward calling points found.</p>
+  {{else}}
+  <ul class="calling-list">
+    {{range .Points}}
+    {{if ne .DisplayAs "CANCELLED_CALL"}}
+    <li class="calling-item">
+      <div class="call-station">
+        <span class="call-name">{{.Name}}</span>
+        <span class="call-time">{{.PublicTime}}
+          {{if ne .PublicTime .Realtime}}<em>({{.Realtime}})</em>{{end}}
+        </span>
+      </div>
+      <div class="call-actions">
+        {{$newLeg := printf "%s|%s|%s|%s" $.UID $.Date $.OriginCRS .CRS}}
+        {{$allLegs := $.Legs}}
+        {{if $allLegs}}
+          {{$allLegs = printf "%s,%s" $.Legs $newLeg}}
+        {{else}}
+          {{$allLegs = $newLeg}}
+        {{end}}
+        <a class="btn btn-dest"
+           href="/journey?legs={{$allLegs}}">
+          Destination
+        </a>
+        <button class="btn btn-change"
+                hx-get="/departures?origin={{.CRS}}&after={{.Realtime}}&date={{$.Date}}&legs={{$allLegs}}"
+                hx-target="#results"
+                hx-swap="innerHTML"
+                hx-push-url="false">
+          Change here
+        </button>
+      </div>
+    </li>
+    {{end}}
+    {{end}}
+  </ul>
+  {{end}}
+</section>
+{{end}}

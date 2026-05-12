@@ -1,0 +1,23 @@
+{{define "journey.html"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Train Trip · Journey</title>
+  <link rel="stylesheet" href="/static/uchu.css">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/htmx.min.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <a href="/" class="site-title">Train Trip</a>
+    <span class="site-time">{{nowTime}}</span>
+  </header>
+  <main class="journey-view">
+    {{range .Legs}}
+    {{template "leg.html" .}}
+    {{end}}
+  </main>
+</body>
+</html>
+{{end}}

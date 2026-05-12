@@ -1,0 +1,34 @@
+{{define "departures.html"}}
+<section class="departures" id="results">
+  <h2>Departures from {{.OriginName}}
+    {{if .After}}after {{.After}}{{end}}
+  </h2>
+  {{if not .Services}}
+  <p class="empty">No departures found.</p>
+  {{else}}
+  <ul class="service-list">
+    {{range .Services}}
+    <li class="service-card status-{{.Status}}"
+        hx-get="/calling-points/{{.UID}}/{{.Date}}?originCRS={{$.Origin}}&legs={{$.Legs}}"
+        hx-target="#results"
+        hx-swap="innerHTML"
+        hx-push-url="false">
+      <div class="service-header">
+        <span class="train-id">{{.TrainID}}</span>
+        <span class="operator">{{.Operator}}</span>
+        <span class="dest">to {{.DestName}}</span>
+      </div>
+      <div class="service-times">
+        <span class="time-booked">{{.Booked}}</span>
+        {{if ne .Booked .Realtime}}
+        <span class="time-real delay">{{.Realtime}} <em>(+{{.DelayMins}}m)</em></span>
+        {{end}}
+        {{if .Platform}}<span class="platform">Plat {{.Platform}}</span>{{end}}
+      </div>
+      <span class="status-badge">{{.Status}}</span>
+    </li>
+    {{end}}
+  </ul>
+  {{end}}
+</section>
+{{end}}
