@@ -103,7 +103,7 @@ type DeparturesFragment struct {
 	Origin     string
 	OriginName string
 	Date       string
-	After      string // HHMM — only show departures at/after this time
+	After      string // HHMM - only show departures at/after this time
 	Legs       string // accumulated legs param
 	Services   []ServiceRow
 }

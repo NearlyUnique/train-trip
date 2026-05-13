@@ -7,6 +7,8 @@
         "HTMX",
         "makeable",
         "stdlib",
-        "uchu"
+        "tmpl",
+        "uchu",
+        "Vars"
     ]
 }
