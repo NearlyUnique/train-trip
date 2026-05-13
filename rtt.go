@@ -234,6 +234,7 @@ type ServiceTemporalData struct {
 type TemporalPoint struct {
 	ScheduleAdvertised string `json:"scheduleAdvertised"`
 	RealtimeForecast   string `json:"realtimeForecast"`
+	RealtimeActual     string `json:"realtimeActual"`
 	IsCancelled        bool   `json:"isCancelled"`
 }
 

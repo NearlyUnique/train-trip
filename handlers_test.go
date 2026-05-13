@@ -193,8 +193,9 @@ func testSvcResp(originCRS, destCRS, depBooked, depRT, arrBooked, arrRT string) 
 	}
 }
 
-// passengerDep builds a minimal passenger Service with a departure time for SearchResponse use.
-func passengerDep(uid, depRT string) Service {
+// passengerDep builds a minimal passenger Service with a departure time and
+// destination CRS for SearchResponse use.
+func passengerDep(uid, depRT, destCRS string) Service {
 	return Service{
 		ScheduleMeta: ServiceScheduleMeta{
 			Identity:               uid,
@@ -208,6 +209,9 @@ func passengerDep(uid, depRT string) Service {
 				ScheduleAdvertised: iso(depRT),
 				RealtimeForecast:   iso(depRT),
 			},
+		},
+		Destination: []StationStop{
+			{Location: StopLocation{ShortCodes: []string{destCRS}}},
 		},
 	}
 }
@@ -559,7 +563,7 @@ func TestAnnotateTightConnection(t *testing.T) {
 		},
 		SearchDeparturesFunc: func(crs, date, fromTime string) (*SearchResponse, error) {
 			// Alternative from MAN at 09:25 (15 min buffer → good)
-			return &SearchResponse{Services: []Service{passengerDep("NEXT", "0925")}}, nil
+			return &SearchResponse{Services: []Service{passengerDep("NEXT", "0925", "LDS")}}, nil
 		},
 	}
 	srv := newTestServer(t, mock)
@@ -587,7 +591,7 @@ func TestNextDeparturesAfter_Error(t *testing.T) {
 		},
 	}
 	srv := newTestServer(t, mock)
-	deps := srv.nextDeparturesAfter("MAN", "20260511", "0910", "0915")
+	deps := srv.nextDeparturesAfter("MAN", "20260511", "0910", "0915", "LDS")
 	assert.Nil(t, deps)
 }
 
@@ -605,19 +609,20 @@ func TestNextDeparturesAfter_TightThenGood(t *testing.T) {
 					TemporalData: ServiceTemporalData{DisplayAs: "CALL",
 						Departure: &TemporalPoint{ScheduleAdvertised: iso("0913"), RealtimeForecast: iso("0913")}}},
 				// dep <= skipHHMM ("0914" <= "0915") → filtered
-				passengerDep("EARLY", "0914"),
+				passengerDep("EARLY", "0914", "LDS"),
 				// no realtime → falls back to scheduled advertised at 0916
 				{ScheduleMeta: ServiceScheduleMeta{InPassengerService: true},
 					TemporalData: ServiceTemporalData{DisplayAs: "CALL",
-						Departure: &TemporalPoint{ScheduleAdvertised: iso("0916"), RealtimeForecast: ""}}},
+						Departure: &TemporalPoint{ScheduleAdvertised: iso("0916"), RealtimeForecast: ""}},
+					Destination: []StationStop{{Location: StopLocation{ShortCodes: []string{"LDS"}}}}},
 				// good dep → included, breaks loop
-				passengerDep("GOOD", "0925"),
+				passengerDep("GOOD", "0925", "LDS"),
 			}}, nil
 		},
 	}
 	srv := newTestServer(t, mock)
-	// arrHHMM="0910", skipHHMM="0915"
-	deps := srv.nextDeparturesAfter("MAN", "20260511", "0910", "0915")
+	// arrHHMM="0910", skipHHMM="0915", destCRS="LDS"
+	deps := srv.nextDeparturesAfter("MAN", "20260511", "0910", "0915", "LDS")
 	require.Len(t, deps, 2)
 	assert.Equal(t, "09:16", deps[0].Time)
 	assert.False(t, deps[0].IsGood) // 6 min buffer — tight
@@ -637,11 +642,62 @@ func TestIsActualDep(t *testing.T) {
 	assert.True(t, card.isActualDep(withForecast, "SHF"))
 	assert.False(t, card.isActualDep(withForecast, "MAN")) // CRS not found
 
+	withActual := &ServiceResponse{Locations: []ServiceLocation{
+		{Location: StopLocation{ShortCodes: []string{"SHF"}},
+			TemporalData: ServiceTemporalData{Departure: &TemporalPoint{RealtimeActual: iso("0901")}}},
+	}}
+	assert.True(t, card.isActualDep(withActual, "SHF")) // actual field set, forecast empty
+
 	noForecast := &ServiceResponse{Locations: []ServiceLocation{
 		{Location: StopLocation{ShortCodes: []string{"SHF"}},
 			TemporalData: ServiceTemporalData{Departure: &TemporalPoint{RealtimeForecast: ""}}},
 	}}
 	assert.False(t, card.isActualDep(noForecast, "SHF"))
+}
+
+func TestBuildLegCards_MissedStatus(t *testing.T) {
+	// No realtime data at all — dep time in the past → missed.
+	svc := &ServiceResponse{
+		ScheduleMeta: ServiceScheduleMeta{TrainReportingIdentity: "1A23", Operator: Operator{Name: "Test Rail"}},
+		Locations: []ServiceLocation{
+			{Location: StopLocation{ShortCodes: []string{"SHF"}},
+				TemporalData: ServiceTemporalData{DisplayAs: "CALL",
+					Departure: &TemporalPoint{ScheduleAdvertised: iso("0800"), RealtimeForecast: "", RealtimeActual: ""}}},
+			{Location: StopLocation{ShortCodes: []string{"MAN"}},
+				TemporalData: ServiceTemporalData{DisplayAs: "CALL",
+					Arrival: &TemporalPoint{ScheduleAdvertised: iso("0845"), RealtimeForecast: "", RealtimeActual: ""}}},
+		},
+	}
+	mock := &rttAPIMock{GetServiceFunc: func(uid, date string) (*ServiceResponse, error) { return svc, nil }}
+	srv := newTestServer(t, mock) // nowTime template func returns "09:00"
+	legs := []Leg{{UID: "A1", Date: "20260511", Origin: "SHF", Dest: "MAN"}}
+	cards := srv.buildLegCards(legs, encodeLegs(legs))
+	require.Len(t, cards, 1)
+	assert.Equal(t, "missed", cards[0].Status)
+}
+
+func TestBuildLegCards_ActualDepartedNotMissed(t *testing.T) {
+	// RealtimeForecast empty but RealtimeActual set — train has departed, not missed.
+	svc := &ServiceResponse{
+		ScheduleMeta: ServiceScheduleMeta{TrainReportingIdentity: "1A23", Operator: Operator{Name: "Test Rail"}},
+		Locations: []ServiceLocation{
+			{Location: StopLocation{ShortCodes: []string{"SHF"}},
+				TemporalData: ServiceTemporalData{DisplayAs: "CALL",
+					Departure: &TemporalPoint{ScheduleAdvertised: iso("0800"), RealtimeForecast: "", RealtimeActual: iso("0801")}}},
+			{Location: StopLocation{ShortCodes: []string{"MAN"}},
+				TemporalData: ServiceTemporalData{DisplayAs: "CALL",
+					Arrival: &TemporalPoint{ScheduleAdvertised: iso("0845"), RealtimeForecast: "", RealtimeActual: iso("0846")}}},
+		},
+	}
+	mock := &rttAPIMock{GetServiceFunc: func(uid, date string) (*ServiceResponse, error) { return svc, nil }}
+	srv := newTestServer(t, mock) // nowTime = "09:00", past both times
+	legs := []Leg{{UID: "A1", Date: "20260511", Origin: "SHF", Dest: "MAN"}}
+	cards := srv.buildLegCards(legs, encodeLegs(legs))
+	require.Len(t, cards, 1)
+	assert.Equal(t, "delayed", cards[0].Status)
+	assert.Equal(t, "08:01", cards[0].DepRealtime) // shows actual departure time
+	assert.Equal(t, "08:46", cards[0].ArrRealtime)
+	assert.Equal(t, 1, cards[0].DelayMins)
 }
 
 func TestIsCancelled(t *testing.T) {

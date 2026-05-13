@@ -56,7 +56,11 @@
     {{if .NextDeps}}
     <div class="next-train-details" hidden>
       <span class="time-label">Next available</span>
-      {{range .NextDeps}}<span class="time-booked{{if .IsGood}} time-good{{end}}">{{.Time}}</span>{{end}}
+      {{range .NextDeps}}<a class="time-chip{{if .IsGood}} time-good{{end}}"
+         hx-get="{{basePath}}/departures?origin={{$.InterchangeCRS}}&date={{$.InterchangeDate}}&after={{.Time}}&legs={{$.PriorLegsParam}}"
+         hx-target="#interchange-deps-{{$.N}}"
+         hx-swap="innerHTML"
+         hx-push-url="false">{{.Time}}</a>{{end}}
     </div>
     {{end}}
   </div>

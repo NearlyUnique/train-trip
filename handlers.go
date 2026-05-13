@@ -378,7 +378,7 @@ func (s *server) buildLegCards(legs []Leg, legsParam string) []LegCard {
 				booked, rt := "", ""
 				if loc.TemporalData.Departure != nil {
 					booked = isoToHHMM(loc.TemporalData.Departure.ScheduleAdvertised)
-					rt = isoToHHMM(loc.TemporalData.Departure.RealtimeForecast)
+					rt = bestTime(loc.TemporalData.Departure)
 				}
 				if rt == "" {
 					rt = booked
@@ -392,7 +392,7 @@ func (s *server) buildLegCards(legs []Leg, legsParam string) []LegCard {
 				booked, rt := "", ""
 				if loc.TemporalData.Arrival != nil {
 					booked = isoToHHMM(loc.TemporalData.Arrival.ScheduleAdvertised)
-					rt = isoToHHMM(loc.TemporalData.Arrival.RealtimeForecast)
+					rt = bestTime(loc.TemporalData.Arrival)
 				}
 				if rt == "" {
 					rt = booked
@@ -437,35 +437,31 @@ func (s *server) annotateTightConnections(cards []LegCard, legs []Leg) {
 		cards[i+1].InterchangeDate = legs[i+1].Date
 		cards[i+1].InterchangeAfter = arr
 		cards[i+1].PriorLegsParam = encodeLegs(legs[:i+1])
-		cards[i+1].NextDeps = s.nextDeparturesAfter(legs[i+1].Origin, legs[i+1].Date, arr, dep)
+		cards[i+1].NextDeps = s.nextDeparturesAfter(legs[i+1].Origin, legs[i+1].Date, arr, dep, legs[i+1].Dest)
 	}
 }
 
 // nextDeparturesAfter returns alternative departures from crs after arrHHMM,
-// skipping the booked connection (skipHHMM). It collects all tight departures
-// (buffer < 10 min from arr) plus the first good one (buffer ≥ 10 min).
-func (s *server) nextDeparturesAfter(crs, date, arrHHMM, skipHHMM string) []NextDep {
+// skipping the booked connection (skipHHMM), filtered to services calling at
+// destCRS. It collects all tight departures (buffer < 10 min from arr) plus
+// the first good one (buffer ≥ 10 min).
+func (s *server) nextDeparturesAfter(crs, date, arrHHMM, skipHHMM, destCRS string) []NextDep {
 	sr, err := s.rtt.SearchDepartures(crs, date, arrHHMM)
 	if err != nil {
 		return nil
 	}
 	arrMins := hhmm2mins(arrHHMM)
+	seen := map[string]bool{}
 	var deps []NextDep
 	for _, svc := range sr.Services {
-		if !svc.ScheduleMeta.InPassengerService {
+		if !svc.ScheduleMeta.InPassengerService || !serviceCallsAt(svc, destCRS) {
 			continue
 		}
-		td := svc.TemporalData
-		if td.DisplayAs == "CANCELLED_CALL" || td.Departure == nil || td.Departure.IsCancelled {
+		dep := effectiveDep(svc.TemporalData)
+		if dep == "" || dep <= skipHHMM || seen[dep] {
 			continue
 		}
-		dep := isoToHHMM(td.Departure.RealtimeForecast)
-		if dep == "" {
-			dep = isoToHHMM(td.Departure.ScheduleAdvertised)
-		}
-		if dep == "" || dep <= skipHHMM {
-			continue
-		}
+		seen[dep] = true
 		buffer := hhmm2mins(dep) - arrMins
 		isGood := buffer >= 10
 		deps = append(deps, NextDep{Time: fmtTime(dep), IsGood: isGood})
@@ -476,13 +472,48 @@ func (s *server) nextDeparturesAfter(crs, date, arrHHMM, skipHHMM string) []Next
 	return deps
 }
 
-func (c *LegCard) isActualDep(svc *ServiceResponse, crs string) bool {
-	for _, loc := range svc.Locations {
-		if loc.CRS() == crs {
-			return loc.TemporalData.Departure != nil && loc.TemporalData.Departure.RealtimeForecast != ""
+// effectiveDep returns the realtime departure HHMM for a service at the
+// queried station, or "" if the service is cancelled or has no departure.
+func effectiveDep(td ServiceTemporalData) string {
+	if td.DisplayAs == "CANCELLED_CALL" || td.Departure == nil || td.Departure.IsCancelled {
+		return ""
+	}
+	if dep := isoToHHMM(td.Departure.RealtimeForecast); dep != "" {
+		return dep
+	}
+	return isoToHHMM(td.Departure.ScheduleAdvertised)
+}
+
+// serviceCallsAt reports whether any of svc's destinations match destCRS.
+func serviceCallsAt(svc Service, destCRS string) bool {
+	for _, stop := range svc.Destination {
+		for _, code := range stop.Location.ShortCodes {
+			if code == destCRS {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+func (c *LegCard) isActualDep(svc *ServiceResponse, crs string) bool {
+	for _, loc := range svc.Locations {
+		if loc.CRS() == crs {
+			dep := loc.TemporalData.Departure
+			return dep != nil && (dep.RealtimeActual != "" || dep.RealtimeForecast != "")
+		}
+	}
+	return false
+}
+
+func bestTime(tp *TemporalPoint) string {
+	if tp == nil {
+		return ""
+	}
+	if t := isoToHHMM(tp.RealtimeActual); t != "" {
+		return t
+	}
+	return isoToHHMM(tp.RealtimeForecast)
 }
 
 func isCancelled(svc *ServiceResponse, crs string) bool {

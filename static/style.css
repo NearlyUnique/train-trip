@@ -246,13 +246,35 @@ main { padding: 1rem 1.25rem; max-width: 680px; margin: 0 auto; }
 .next-train-details {
   display: flex;
   gap: 0.5rem;
-  align-items: baseline;
+  align-items: center;
+  flex-wrap: wrap;
   margin-top: 0.4rem;
   padding: 0.5rem 0.75rem;
   background: var(--uchu-green-1);
   border: 1px solid var(--uchu-green-3);
   border-radius: 4px;
 }
+
+.time-chip {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 4px;
+  border: 1px solid var(--uchu-blue-4);
+  background: var(--bg2);
+  color: var(--uchu-blue-8);
+  font-size: 1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+}
+.time-chip:hover { background: var(--uchu-blue-1); border-color: var(--uchu-blue-6); }
+.time-chip.time-good {
+  border-color: var(--uchu-green-5);
+  color: var(--uchu-green-9);
+}
+.time-chip.time-good:hover { background: var(--uchu-green-2); border-color: var(--uchu-green-6); }
 
 /* Station autocomplete */
 .ac-wrap { position: relative; }
