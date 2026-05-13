@@ -4,7 +4,10 @@ After=network.target
 
 [Service]
 ExecStart=/home/pi/train_trip/train_trip
+WorkingDirectory=/home/pi/train_trip
+EnvironmentFile=-/home/pi/train_trip/.env
 Environment=PORT=8083
+Environment=BASE_PATH=/train
 Restart=on-failure
 User=pi
 

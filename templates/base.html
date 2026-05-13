@@ -4,13 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Train Trip</title>
-  <link rel="stylesheet" href="/static/uchu.css">
-  <link rel="stylesheet" href="/static/style.css">
-  <script src="/static/htmx.min.js" defer></script>
+  <link rel="stylesheet" href="{{basePath}}/static/uchu.css">
+  <link rel="stylesheet" href="{{basePath}}/static/style.css">
+  <script src="{{basePath}}/static/htmx.min.js" defer></script>
 </head>
 <body>
   <header class="site-header">
-    <a href="/" class="site-title">Train Trip</a>
+    <a href="{{basePath}}/" class="site-title">Train Trip</a>
     <span class="site-time" id="clock">{{nowTime}}</span>
   </header>
   <main>

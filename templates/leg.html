@@ -1,7 +1,7 @@
 {{define "leg.html"}}
 <div class="leg-card status-{{.Status}}"
      id="leg-{{.N}}"
-     hx-get="/leg/{{.N}}?legs={{.LegsParam}}"
+     hx-get="{{basePath}}/leg/{{.N}}?legs={{.LegsParam}}"
      hx-trigger="every 30s"
      hx-swap="outerHTML">
 

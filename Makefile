@@ -26,10 +26,13 @@ clean:
 test:
 	go test ./...
 
-## Deploy to Pi: build ARM6 binary, clean remote dirs, copy everything, restart service
+## Deploy to Pi: build ARM6 binary, copy files (preserving .env), restart service
 deploy: build-arm test
 	ssh $(PI_HOST) "sudo systemctl stop train_trip || true"
-	ssh $(PI_HOST) "rm -rf $(PI_DIR) && mkdir -p $(PI_DIR)"
-	scp $(BINARY_ARM) $(PI_HOST):$(PI_DIR)/train_trip
-	scp -r linux/     $(PI_HOST):$(PI_DIR)/
+	ssh $(PI_HOST) "mkdir -p $(PI_DIR) && rm -f $(PI_DIR)/train_trip && rm -rf $(PI_DIR)/linux $(PI_DIR)/templates $(PI_DIR)/static"
+	scp $(BINARY_ARM)  $(PI_HOST):$(PI_DIR)/train_trip
+	scp .env           $(PI_HOST):$(PI_DIR)/.env
+	scp -r linux/      $(PI_HOST):$(PI_DIR)/
+	scp -r templates/  $(PI_HOST):$(PI_DIR)/
+	scp -r static/     $(PI_HOST):$(PI_DIR)/
 	ssh $(PI_HOST) "bash $(PI_DIR)/linux/run.sh"

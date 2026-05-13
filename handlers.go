@@ -138,6 +138,12 @@ type JourneyPage struct {
 	Legs []LegCard
 }
 
+// NextDep is an alternative departure time for a tight-connection leg.
+type NextDep struct {
+	Time   string // HH:MM
+	IsGood bool   // true if ≥10 min buffer from interchange arrival
+}
+
 type LegCard struct {
 	N               int
 	LegsParam       string
@@ -154,9 +160,14 @@ type LegCard struct {
 	Platform        string
 	DelayMins       int
 	Status          string // "on-time" | "delayed" | "cancelled" | "missed"
-	TightConnection bool   // true when gap to next leg is ≤ 10 min
+	Completed       bool   // true when arrival time has passed
+	TightConnection bool   // true when gap from prior leg is ≤ 10 min
 	ConnectionMins  int    // minutes available for the connection
-	NextTrainDep    string // next available departure from interchange (HH:MM)
+	NextDeps        []NextDep // alternative departures from interchange
+	InterchangeCRS  string // CRS of interchange station (origin of this leg)
+	InterchangeDate string
+	InterchangeAfter string // HHMM arrival of prior leg at interchange
+	PriorLegsParam  string // encoded legs before this one, for departure navigation
 }
 
 // -- handlers --
@@ -175,6 +186,7 @@ func (s *server) handleDepartures(w http.ResponseWriter, r *http.Request) {
 	legsParam := r.URL.Query().Get("legs")
 
 	if origin == "" {
+		slog.Warn("departures: missing origin", "url", r.URL.String())
 		http.Error(w, "origin required", http.StatusBadRequest)
 		return
 	}
@@ -414,19 +426,26 @@ func (s *server) annotateTightConnections(cards []LegCard, legs []Leg) {
 		if arr == "" || dep == "" || connMins < 0 || connMins > 10 {
 			continue
 		}
-		cards[i].TightConnection = true
-		cards[i].ConnectionMins = connMins
-		cards[i].NextTrainDep = s.nextDepartureAfter(legs[i].Dest, legs[i].Date, arr, dep)
+		cards[i+1].TightConnection = true
+		cards[i+1].ConnectionMins = connMins
+		cards[i+1].InterchangeCRS = legs[i+1].Origin
+		cards[i+1].InterchangeDate = legs[i+1].Date
+		cards[i+1].InterchangeAfter = arr
+		cards[i+1].PriorLegsParam = encodeLegs(legs[:i+1])
+		cards[i+1].NextDeps = s.nextDeparturesAfter(legs[i+1].Origin, legs[i+1].Date, arr, dep)
 	}
 }
 
-// nextDepartureAfter returns the HH:MM of the first departure from crs on date
-// that arrives after arrHHMM but is strictly later than skipHHMM (the booked connection).
-func (s *server) nextDepartureAfter(crs, date, arrHHMM, skipHHMM string) string {
+// nextDeparturesAfter returns alternative departures from crs after arrHHMM,
+// skipping the booked connection (skipHHMM). It collects all tight departures
+// (buffer < 10 min from arr) plus the first good one (buffer ≥ 10 min).
+func (s *server) nextDeparturesAfter(crs, date, arrHHMM, skipHHMM string) []NextDep {
 	sr, err := s.rtt.SearchDepartures(crs, date, arrHHMM)
 	if err != nil {
-		return ""
+		return nil
 	}
+	arrMins := hhmm2mins(arrHHMM)
+	var deps []NextDep
 	for _, svc := range sr.Services {
 		if !svc.ScheduleMeta.InPassengerService {
 			continue
@@ -439,11 +458,17 @@ func (s *server) nextDepartureAfter(crs, date, arrHHMM, skipHHMM string) string 
 		if dep == "" {
 			dep = isoToHHMM(td.Departure.ScheduleAdvertised)
 		}
-		if dep != "" && dep > skipHHMM {
-			return fmtTime(dep)
+		if dep == "" || dep <= skipHHMM {
+			continue
+		}
+		buffer := hhmm2mins(dep) - arrMins
+		isGood := buffer >= 10
+		deps = append(deps, NextDep{Time: fmtTime(dep), IsGood: isGood})
+		if isGood {
+			break
 		}
 	}
-	return ""
+	return deps
 }
 
 func (c *LegCard) isActualDep(svc *ServiceResponse, crs string) bool {

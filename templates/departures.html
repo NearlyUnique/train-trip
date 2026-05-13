@@ -9,7 +9,7 @@
   <ul class="service-list">
     {{range .Services}}
     <li class="service-card status-{{.Status}}"
-        hx-get="/calling-points/{{.UID}}/{{.Date}}?originCRS={{$.Origin}}&legs={{$.Legs}}"
+        hx-get="{{basePath}}/calling-points/{{.UID}}/{{.Date}}?originCRS={{$.Origin}}&legs={{$.Legs}}"
         hx-target="#results"
         hx-swap="innerHTML"
         hx-push-url="false">

@@ -19,8 +19,11 @@ func main() {
 
 	rttClient := NewRTTClient(cfg.dataURL, cfg.rttToken)
 
+	basePath := strings.TrimRight(os.Getenv("BASE_PATH"), "/")
+
 	tmpl, err := template.New("").Funcs(template.FuncMap{
-		"nowTime": func() string { return nowHHMM() },
+		"nowTime":  func() string { return nowHHMM() },
+		"basePath": func() string { return basePath },
 		"stationsJSON": func(ss []Station) template.JS {
 			b, _ := json.Marshal(ss)
 			return template.JS(b)

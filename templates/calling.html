@@ -25,11 +25,11 @@
           {{$allLegs = $newLeg}}
         {{end}}
         <a class="btn btn-dest"
-           href="/journey?legs={{$allLegs}}">
+           href="{{basePath}}/journey?legs={{$allLegs}}">
           Destination
         </a>
         <button class="btn btn-change"
-                hx-get="/departures?origin={{.CRS}}&after={{.Realtime}}&date={{$.Date}}&legs={{$allLegs}}"
+                hx-get="{{basePath}}/departures?origin={{.CRS}}&after={{.Realtime}}&date={{$.Date}}&legs={{$allLegs}}"
                 hx-target="#results"
                 hx-swap="innerHTML"
                 hx-push-url="false">
