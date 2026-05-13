@@ -53,10 +53,10 @@
             onclick="var d=this.nextElementSibling;var open=d.hidden;d.hidden=!open;this.setAttribute('aria-expanded',open)">
       🍀 {{.ConnectionMins}} min connection
     </button>
-    {{if .NextTrainDep}}
+    {{if .NextDeps}}
     <div class="next-train-details" hidden>
       <span class="time-label">Next available</span>
-      <span class="time-booked">{{.NextTrainDep}}</span>
+      {{range .NextDeps}}<span class="time-booked{{if .IsGood}} time-good{{end}}">{{.Time}}</span>{{end}}
     </div>
     {{end}}
   </div>
