@@ -4,7 +4,7 @@ PI_HOST     := pi
 PI_DIR      := /home/pi/train_trip
 PORT        := 8083
 
-.PHONY: build build-arm run clean deploy test
+.PHONY: build build-arm run clean deploy generate test test-go test-js
 
 # Build for local architecture
 build:
@@ -20,11 +20,23 @@ run: build test
 
 # clean deployment artifacts
 clean:
-	rm -f $(BINARY) $(BINARY_ARM)
+	rm -f $(BINARY) $(BINARY_ARM) coverage.out
 
 ## Run all tests
-test:
-	go test ./...
+test: test-go test-js
+
+## Run Go tests with coverage
+test-go:
+	go test -coverprofile=coverage.out ./...
+	go tool cover -func=coverage.out
+
+## Run JavaScript tests with coverage
+test-js:
+	node --experimental-test-coverage static/autocomplete.test.js
+
+## Regenerate mocks (run after changing rttAPI interface)
+generate:
+	go generate ./...
 
 ## Deploy to Pi: build ARM6 binary, copy files (preserving .env), restart service
 deploy: build-arm test

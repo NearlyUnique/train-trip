@@ -12,8 +12,13 @@ import (
 	"github.com/gorilla/mux"
 )
 
+type rttAPI interface {
+	SearchDepartures(crs, date, fromTime string) (*SearchResponse, error)
+	GetService(uid, date string) (*ServiceResponse, error)
+}
+
 type server struct {
-	rtt  *RTTClient
+	rtt  rttAPI
 	tmpl *template.Template
 }
 
@@ -334,10 +339,10 @@ func (s *server) handleJourney(w http.ResponseWriter, r *http.Request) {
 // GET /leg/{n}?legs=...
 func (s *server) handleLeg(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	n, _ := strconv.Atoi(vars["n"])
+	n, err := strconv.Atoi(vars["n"])
 	legsParam := r.URL.Query().Get("legs")
-	legs, err := parseLegs(legsParam)
-	if err != nil || n < 0 || n >= len(legs) {
+	legs, parseErr := parseLegs(legsParam)
+	if err != nil || parseErr != nil || n < 0 || n >= len(legs) {
 		http.Error(w, "invalid leg", http.StatusBadRequest)
 		return
 	}
@@ -399,11 +404,11 @@ func (s *server) buildLegCards(legs []Leg, legsParam string) []LegCard {
 
 		// Determine status
 		depHHMM := strings.ReplaceAll(card.DepRealtime, ":", "")
-		nowHHMM := now.Format("1504")
+		currentTime := now.Format("1504")
 		switch {
 		case isCancelled(svc, leg.Origin):
 			card.Status = "cancelled"
-		case depHHMM != "" && depHHMM < nowHHMM && !card.isActualDep(svc, leg.Origin):
+		case depHHMM != "" && depHHMM < currentTime && !card.isActualDep(svc, leg.Origin):
 			card.Status = "missed"
 		case card.DelayMins > 0:
 			card.Status = "delayed"
