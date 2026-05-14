@@ -239,7 +239,7 @@ func TestHandleDepartures_MissingOrigin(t *testing.T) {
 
 func TestHandleDepartures_APIError(t *testing.T) {
 	mock := &rttAPIMock{
-		SearchDeparturesFunc: func(crs, date, fromTime string) (*SearchResponse, error) {
+		SearchDeparturesFunc: func(crs, date, fromTime, to string) (*SearchResponse, error) {
 			return nil, errors.New("api down")
 		},
 	}
@@ -252,7 +252,7 @@ func TestHandleDepartures_APIError(t *testing.T) {
 
 func TestHandleDepartures_EmptyResults(t *testing.T) {
 	mock := &rttAPIMock{
-		SearchDeparturesFunc: func(crs, date, fromTime string) (*SearchResponse, error) {
+		SearchDeparturesFunc: func(crs, date, fromTime, to string) (*SearchResponse, error) {
 			return &SearchResponse{}, nil
 		},
 	}
@@ -291,7 +291,7 @@ func TestHandleDepartures_ServiceFiltering(t *testing.T) {
 			Destination:  []StationStop{{Location: StopLocation{Description: "Leeds"}}}},
 	}
 	mock := &rttAPIMock{
-		SearchDeparturesFunc: func(crs, date, fromTime string) (*SearchResponse, error) {
+		SearchDeparturesFunc: func(crs, date, fromTime, to string) (*SearchResponse, error) {
 			return &SearchResponse{Services: services}, nil
 		},
 	}
@@ -487,6 +487,9 @@ func TestBuildLegCards_NoRealtimeFallback(t *testing.T) {
 	}
 	mock := &rttAPIMock{
 		GetServiceFunc: func(uid, date string) (*ServiceResponse, error) { return svc, nil },
+		SearchDeparturesFunc: func(crs, date, fromTime, to string) (*SearchResponse, error) {
+			return &SearchResponse{}, nil
+		},
 	}
 	srv := newTestServer(t, mock)
 	legs := []Leg{{UID: "A1", Date: "20260511", Origin: "SHF", Dest: "MAN"}}
@@ -561,7 +564,7 @@ func TestAnnotateTightConnection(t *testing.T) {
 			// MAN → LDS departing 09:15
 			return testSvcResp("MAN", "LDS", "0915", "0915", "1000", "1000"), nil
 		},
-		SearchDeparturesFunc: func(crs, date, fromTime string) (*SearchResponse, error) {
+		SearchDeparturesFunc: func(crs, date, fromTime, to string) (*SearchResponse, error) {
 			// Alternative from MAN at 09:25 (15 min buffer → good)
 			return &SearchResponse{Services: []Service{passengerDep("NEXT", "0925", "LDS")}}, nil
 		},
@@ -582,23 +585,55 @@ func TestAnnotateTightConnection(t *testing.T) {
 	assert.True(t, cards[1].NextDeps[0].IsGood)
 }
 
+func TestAnnotateTightConnection_MissedConnection(t *testing.T) {
+	mock := &rttAPIMock{
+		GetServiceFunc: func(uid, date string) (*ServiceResponse, error) {
+			if uid == "LEG1" {
+				// SHF → MAN arriving 09:10 (on time)
+				return testSvcResp("SHF", "MAN", "0905", "0905", "0910", "0910"), nil
+			}
+			// MAN → LDS booked 09:08 — already departed before leg 1 arrives
+			return testSvcResp("MAN", "LDS", "0908", "0908", "1000", "1000"), nil
+		},
+		SearchDeparturesFunc: func(crs, date, fromTime, to string) (*SearchResponse, error) {
+			// Next good train from MAN at 09:25
+			return &SearchResponse{Services: []Service{passengerDep("NEXT", "0925", "LDS")}}, nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	legs := []Leg{
+		{UID: "LEG1", Date: "20260511", Origin: "SHF", Dest: "MAN"},
+		{UID: "LEG2", Date: "20260511", Origin: "MAN", Dest: "LDS"},
+	}
+	cards := srv.buildLegCards(legs, encodeLegs(legs))
+
+	require.Len(t, cards, 2)
+	assert.False(t, cards[0].TightConnection)
+	assert.True(t, cards[1].TightConnection)
+	assert.Equal(t, -2, cards[1].ConnectionMins)
+	require.Len(t, cards[1].NextDeps, 1)
+	assert.Equal(t, "09:25", cards[1].NextDeps[0].Time)
+	assert.True(t, cards[1].NextDeps[0].IsGood)
+	assert.False(t, cards[1].NextDeps[0].AutoLoad) // chips are user-initiated; no auto-load
+}
+
 // --- nextDeparturesAfter ---
 
 func TestNextDeparturesAfter_Error(t *testing.T) {
 	mock := &rttAPIMock{
-		SearchDeparturesFunc: func(crs, date, fromTime string) (*SearchResponse, error) {
+		SearchDeparturesFunc: func(crs, date, fromTime, to string) (*SearchResponse, error) {
 			return nil, errors.New("api down")
 		},
 	}
 	srv := newTestServer(t, mock)
-	deps := srv.nextDeparturesAfter("MAN", "20260511", "0910", "0915", "LDS")
+	deps := srv.nextDeparturesAfter("MAN", "20260511", "0910", "0915", "LDS", "")
 	assert.Nil(t, deps)
 }
 
 func TestNextDeparturesAfter_TightThenGood(t *testing.T) {
 	// Returns: cancelled (filtered), non-passenger (filtered), tight dep, then good dep.
 	mock := &rttAPIMock{
-		SearchDeparturesFunc: func(crs, date, fromTime string) (*SearchResponse, error) {
+		SearchDeparturesFunc: func(crs, date, fromTime, to string) (*SearchResponse, error) {
 			return &SearchResponse{Services: []Service{
 				// cancelled → filtered
 				{ScheduleMeta: ServiceScheduleMeta{InPassengerService: true},
@@ -622,7 +657,7 @@ func TestNextDeparturesAfter_TightThenGood(t *testing.T) {
 	}
 	srv := newTestServer(t, mock)
 	// arrHHMM="0910", skipHHMM="0915", destCRS="LDS"
-	deps := srv.nextDeparturesAfter("MAN", "20260511", "0910", "0915", "LDS")
+	deps := srv.nextDeparturesAfter("MAN", "20260511", "0910", "0915", "LDS", "")
 	require.Len(t, deps, 2)
 	assert.Equal(t, "09:16", deps[0].Time)
 	assert.False(t, deps[0].IsGood) // 6 min buffer — tight
@@ -668,12 +703,53 @@ func TestBuildLegCards_MissedStatus(t *testing.T) {
 					Arrival: &TemporalPoint{ScheduleAdvertised: iso("0845"), RealtimeForecast: "", RealtimeActual: ""}}},
 		},
 	}
-	mock := &rttAPIMock{GetServiceFunc: func(uid, date string) (*ServiceResponse, error) { return svc, nil }}
-	srv := newTestServer(t, mock) // nowTime template func returns "09:00"
+	mock := &rttAPIMock{
+		GetServiceFunc: func(uid, date string) (*ServiceResponse, error) { return svc, nil },
+		SearchDeparturesFunc: func(crs, date, fromTime, to string) (*SearchResponse, error) {
+			return &SearchResponse{}, nil
+		},
+	}
+	srv := newTestServer(t, mock)
 	legs := []Leg{{UID: "A1", Date: "20260511", Origin: "SHF", Dest: "MAN"}}
 	cards := srv.buildLegCards(legs, encodeLegs(legs))
 	require.Len(t, cards, 1)
 	assert.Equal(t, "missed", cards[0].Status)
+	assert.Equal(t, "MAN", cards[0].DestCRS)
+}
+
+func TestAnnotateMissedLegs_NextDepDisplayed(t *testing.T) {
+	// Missed first leg — annotateMissedLegs should populate NextDeps with AutoLoad.
+	svc := &ServiceResponse{
+		ScheduleMeta: ServiceScheduleMeta{TrainReportingIdentity: "1A23", Operator: Operator{Name: "Test Rail"}},
+		Locations: []ServiceLocation{
+			{Location: StopLocation{ShortCodes: []string{"SHF"}},
+				TemporalData: ServiceTemporalData{DisplayAs: "CALL",
+					Departure: &TemporalPoint{ScheduleAdvertised: iso("0800"), RealtimeForecast: "", RealtimeActual: ""}}},
+			{Location: StopLocation{ShortCodes: []string{"MAN"}},
+				TemporalData: ServiceTemporalData{DisplayAs: "CALL",
+					Arrival: &TemporalPoint{ScheduleAdvertised: iso("0845"), RealtimeForecast: "", RealtimeActual: ""}}},
+		},
+	}
+	mock := &rttAPIMock{
+		GetServiceFunc: func(uid, date string) (*ServiceResponse, error) { return svc, nil },
+		SearchDeparturesFunc: func(crs, date, fromTime, to string) (*SearchResponse, error) {
+			assert.Equal(t, "SHF", crs)
+			assert.Equal(t, "MAN", to)
+			return &SearchResponse{Services: []Service{passengerDep("NEXT", "0925", "MAN")}}, nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	legs := []Leg{{UID: "A1", Date: "20260511", Origin: "SHF", Dest: "MAN"}}
+	cards := srv.buildLegCards(legs, encodeLegs(legs))
+	require.Len(t, cards, 1)
+	assert.Equal(t, "missed", cards[0].Status)
+	assert.False(t, cards[0].TightConnection)
+	assert.Equal(t, "SHF", cards[0].InterchangeCRS)
+	assert.Equal(t, "MAN", cards[0].DestCRS)
+	require.Len(t, cards[0].NextDeps, 1)
+	assert.Equal(t, "09:25", cards[0].NextDeps[0].Time)
+	assert.True(t, cards[0].NextDeps[0].IsGood)
+	assert.False(t, cards[0].NextDeps[0].AutoLoad) // chips are user-initiated; no auto-load
 }
 
 func TestBuildLegCards_ActualDepartedNotMissed(t *testing.T) {

@@ -20,7 +20,7 @@ var _ rttAPI = &rttAPIMock{}
 //			GetServiceFunc: func(uid string, date string) (*ServiceResponse, error) {
 //				panic("mock out the GetService method")
 //			},
-//			SearchDeparturesFunc: func(crs string, date string, fromTime string) (*SearchResponse, error) {
+//			SearchDeparturesFunc: func(crs string, date string, fromTime string, to string) (*SearchResponse, error) {
 //				panic("mock out the SearchDepartures method")
 //			},
 //		}
@@ -34,7 +34,7 @@ type rttAPIMock struct {
 	GetServiceFunc func(uid string, date string) (*ServiceResponse, error)
 
 	// SearchDeparturesFunc mocks the SearchDepartures method.
-	SearchDeparturesFunc func(crs string, date string, fromTime string) (*SearchResponse, error)
+	SearchDeparturesFunc func(crs string, date string, fromTime string, to string) (*SearchResponse, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -53,6 +53,8 @@ type rttAPIMock struct {
 			Date string
 			// FromTime is the fromTime argument value.
 			FromTime string
+			// To is the to argument value.
+			To string
 		}
 	}
 	lockGetService       sync.RWMutex
@@ -96,7 +98,7 @@ func (mock *rttAPIMock) GetServiceCalls() []struct {
 }
 
 // SearchDepartures calls SearchDeparturesFunc.
-func (mock *rttAPIMock) SearchDepartures(crs string, date string, fromTime string) (*SearchResponse, error) {
+func (mock *rttAPIMock) SearchDepartures(crs string, date string, fromTime string, to string) (*SearchResponse, error) {
 	if mock.SearchDeparturesFunc == nil {
 		panic("rttAPIMock.SearchDeparturesFunc: method is nil but rttAPI.SearchDepartures was just called")
 	}
@@ -104,15 +106,17 @@ func (mock *rttAPIMock) SearchDepartures(crs string, date string, fromTime strin
 		Crs      string
 		Date     string
 		FromTime string
+		To       string
 	}{
 		Crs:      crs,
 		Date:     date,
 		FromTime: fromTime,
+		To:       to,
 	}
 	mock.lockSearchDepartures.Lock()
 	mock.calls.SearchDepartures = append(mock.calls.SearchDepartures, callInfo)
 	mock.lockSearchDepartures.Unlock()
-	return mock.SearchDeparturesFunc(crs, date, fromTime)
+	return mock.SearchDeparturesFunc(crs, date, fromTime, to)
 }
 
 // SearchDeparturesCalls gets all the calls that were made to SearchDepartures.
@@ -123,11 +127,13 @@ func (mock *rttAPIMock) SearchDeparturesCalls() []struct {
 	Crs      string
 	Date     string
 	FromTime string
+	To       string
 } {
 	var calls []struct {
 		Crs      string
 		Date     string
 		FromTime string
+		To       string
 	}
 	mock.lockSearchDepartures.RLock()
 	calls = mock.calls.SearchDepartures

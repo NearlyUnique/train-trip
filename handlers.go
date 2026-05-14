@@ -13,7 +13,7 @@ import (
 )
 
 type rttAPI interface {
-	SearchDepartures(crs, date, fromTime string) (*SearchResponse, error)
+	SearchDepartures(crs, date, fromTime, to string) (*SearchResponse, error)
 	GetService(uid, date string) (*ServiceResponse, error)
 }
 
@@ -145,8 +145,9 @@ type JourneyPage struct {
 
 // NextDep is an alternative departure time for a tight-connection leg.
 type NextDep struct {
-	Time   string // HH:MM
-	IsGood bool   // true if ≥10 min buffer from interchange arrival
+	Time     string // HH:MM
+	IsGood   bool   // true if ≥10 min buffer from interchange arrival
+	AutoLoad bool   // auto-trigger HTMX fetch on page render
 }
 
 type LegCard struct {
@@ -158,6 +159,7 @@ type LegCard struct {
 	Operator        string
 	OriginName      string
 	DestName        string
+	DestCRS         string // CRS code of destination, for departure filtering
 	DepBooked       string
 	DepRealtime     string
 	ArrBooked       string
@@ -173,6 +175,7 @@ type LegCard struct {
 	InterchangeDate string
 	InterchangeAfter string // HHMM arrival of prior leg at interchange
 	PriorLegsParam  string // encoded legs before this one, for departure navigation
+	DestLongCode    string // NLC/STANOX long code for dest, for departure filtering
 }
 
 // -- handlers --
@@ -189,6 +192,7 @@ func (s *server) handleDepartures(w http.ResponseWriter, r *http.Request) {
 	timeRaw := r.URL.Query().Get("time")
 	after := strings.ReplaceAll(r.URL.Query().Get("after"), ":", "")
 	legsParam := r.URL.Query().Get("legs")
+	to := strings.ToUpper(r.URL.Query().Get("to"))
 
 	if origin == "" {
 		slog.Warn("departures: missing origin", "url", r.URL.String())
@@ -210,7 +214,7 @@ func (s *server) handleDepartures(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	sr, err := s.rtt.SearchDepartures(origin, date, minTime)
+	sr, err := s.rtt.SearchDepartures(origin, date, minTime, to)
 	if err != nil {
 		slog.Error("departures fetch", "origin", origin, "err", err)
 		http.Error(w, "could not fetch departures", http.StatusBadGateway)
@@ -372,6 +376,7 @@ func (s *server) buildLegCards(legs []Leg, legsParam string) []LegCard {
 		card.Operator = svc.ScheduleMeta.Operator.Name
 		card.OriginName = stationName(leg.Origin)
 		card.DestName = stationName(leg.Dest)
+		card.DestCRS = leg.Dest
 
 		for _, loc := range svc.Locations {
 			if loc.CRS() == leg.Origin {
@@ -399,6 +404,9 @@ func (s *server) buildLegCards(legs []Leg, legsParam string) []LegCard {
 				}
 				card.ArrBooked = fmtTime(booked)
 				card.ArrRealtime = fmtTime(rt)
+				if len(loc.Location.LongCodes) > 0 {
+					card.DestLongCode = loc.Location.LongCodes[0]
+				}
 			}
 		}
 
@@ -420,6 +428,7 @@ func (s *server) buildLegCards(legs []Leg, legsParam string) []LegCard {
 	}
 
 	s.annotateTightConnections(cards, legs)
+	s.annotateMissedLegs(cards, legs, now.Format("1504"))
 	return cards
 }
 
@@ -428,7 +437,7 @@ func (s *server) annotateTightConnections(cards []LegCard, legs []Leg) {
 		arr := strings.ReplaceAll(cards[i].ArrRealtime, ":", "")
 		dep := strings.ReplaceAll(cards[i+1].DepRealtime, ":", "")
 		connMins := hhmm2mins(dep) - hhmm2mins(arr)
-		if arr == "" || dep == "" || connMins < 0 || connMins > 10 {
+		if arr == "" || dep == "" || connMins > 10 {
 			continue
 		}
 		cards[i+1].TightConnection = true
@@ -437,7 +446,31 @@ func (s *server) annotateTightConnections(cards []LegCard, legs []Leg) {
 		cards[i+1].InterchangeDate = legs[i+1].Date
 		cards[i+1].InterchangeAfter = arr
 		cards[i+1].PriorLegsParam = encodeLegs(legs[:i+1])
-		cards[i+1].NextDeps = s.nextDeparturesAfter(legs[i+1].Origin, legs[i+1].Date, arr, dep, legs[i+1].Dest)
+		cards[i+1].NextDeps = s.nextDeparturesAfter(legs[i+1].Origin, legs[i+1].Date, arr, dep, legs[i+1].Dest, cards[i+1].DestLongCode)
+	}
+}
+
+// annotateMissedLegs populates NextDeps for legs that are "missed" but not
+// already handled as tight connections, so the template can display the next
+// available train to the destination below the card.
+func (s *server) annotateMissedLegs(cards []LegCard, legs []Leg, nowHHMM string) {
+	for i := range cards {
+		if cards[i].Status != "missed" || cards[i].TightConnection {
+			continue
+		}
+		depHHMM := strings.ReplaceAll(cards[i].DepRealtime, ":", "")
+		cards[i].InterchangeCRS = legs[i].Origin
+		cards[i].InterchangeDate = legs[i].Date
+		cards[i].InterchangeAfter = nowHHMM
+		if i > 0 {
+			cards[i].PriorLegsParam = encodeLegs(legs[:i])
+		}
+		deps := s.nextDeparturesAfter(legs[i].Origin, legs[i].Date, nowHHMM, depHHMM, legs[i].Dest, cards[i].DestLongCode)
+		// For a missed standalone leg any next train to the destination is the right choice.
+		if len(deps) > 0 {
+			deps[0].IsGood = true
+		}
+		cards[i].NextDeps = deps
 	}
 }
 
@@ -445,8 +478,8 @@ func (s *server) annotateTightConnections(cards []LegCard, legs []Leg) {
 // skipping the booked connection (skipHHMM), filtered to services calling at
 // destCRS. It collects all tight departures (buffer < 10 min from arr) plus
 // the first good one (buffer ≥ 10 min).
-func (s *server) nextDeparturesAfter(crs, date, arrHHMM, skipHHMM, destCRS string) []NextDep {
-	sr, err := s.rtt.SearchDepartures(crs, date, arrHHMM)
+func (s *server) nextDeparturesAfter(crs, date, arrHHMM, skipHHMM, destCRS, destLongCode string) []NextDep {
+	sr, err := s.rtt.SearchDepartures(crs, date, arrHHMM, destCRS)
 	if err != nil {
 		return nil
 	}
@@ -454,7 +487,7 @@ func (s *server) nextDeparturesAfter(crs, date, arrHHMM, skipHHMM, destCRS strin
 	seen := map[string]bool{}
 	var deps []NextDep
 	for _, svc := range sr.Services {
-		if !svc.ScheduleMeta.InPassengerService || !serviceCallsAt(svc, destCRS) {
+		if !svc.ScheduleMeta.InPassengerService || !serviceCallsAt(svc, destCRS, destLongCode) {
 			continue
 		}
 		dep := effectiveDep(svc.TemporalData)
@@ -485,11 +518,18 @@ func effectiveDep(td ServiceTemporalData) string {
 }
 
 // serviceCallsAt reports whether any of svc's destinations match destCRS.
-func serviceCallsAt(svc Service, destCRS string) bool {
+func serviceCallsAt(svc Service, destCRS, destLongCode string) bool {
 	for _, stop := range svc.Destination {
 		for _, code := range stop.Location.ShortCodes {
 			if code == destCRS {
 				return true
+			}
+		}
+		if destLongCode != "" {
+			for _, code := range stop.Location.LongCodes {
+				if code == destLongCode {
+					return true
+				}
 			}
 		}
 	}

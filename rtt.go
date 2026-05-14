@@ -145,10 +145,13 @@ func (c *RTTClient) get(path string) ([]byte, error) {
 // Spec: https://realtimetrains.github.io/api-specification/specification/main.yml line ~993
 //
 //	GET /gb-nr/location?code={crs}&timeFrom={ISO8601}
-func (c *RTTClient) SearchDepartures(crs, date, fromTime string) (*SearchResponse, error) {
+func (c *RTTClient) SearchDepartures(crs, date, fromTime, to string) (*SearchResponse, error) {
 	q := url.Values{}
 	q.Set("code", crs)
 	q.Set("timeFrom", ymdHHMMtoISO(date, fromTime))
+	if to != "" {
+		q.Set("to", to)
+	}
 	body, err := c.get("/gb-nr/location?" + q.Encode())
 	if err != nil {
 		return nil, err

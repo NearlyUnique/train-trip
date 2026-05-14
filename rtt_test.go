@@ -96,7 +96,7 @@ func TestRTTClient_SearchDepartures(t *testing.T) {
 	defer ts.Close()
 
 	client := NewRTTClient(ts.URL, "test-refresh")
-	sr, err := client.SearchDepartures("SHF", "20260511", "0900")
+	sr, err := client.SearchDepartures("SHF", "20260511", "0900", "")
 	require.NoError(t, err)
 	assert.NotNil(t, sr)
 }
@@ -129,9 +129,9 @@ func TestRTTClient_TokenCacheHit(t *testing.T) {
 	defer ts.Close()
 
 	client := NewRTTClient(ts.URL, "test-refresh")
-	_, err := client.SearchDepartures("SHF", "20260511", "0900") // fetches token
+	_, err := client.SearchDepartures("SHF", "20260511", "0900", "") // fetches token
 	require.NoError(t, err)
-	_, err = client.SearchDepartures("MAN", "20260511", "0900") // reuses cached token
+	_, err = client.SearchDepartures("MAN", "20260511", "0900", "") // reuses cached token
 	require.NoError(t, err)
 	assert.Equal(t, 1, tokenCalls)
 }
@@ -159,10 +159,10 @@ func TestRTTClient_CacheHit(t *testing.T) {
 	defer ts.Close()
 
 	client := NewRTTClient(ts.URL, "test-refresh")
-	_, err := client.SearchDepartures("SHF", "20260511", "0900")
+	_, err := client.SearchDepartures("SHF", "20260511", "0900", "")
 	require.NoError(t, err)
 
-	_, err = client.SearchDepartures("SHF", "20260511", "0900") // same request
+	_, err = client.SearchDepartures("SHF", "20260511", "0900", "") // same request
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, hits, "token should only be fetched once within TTL")
@@ -175,7 +175,7 @@ func TestRTTClient_TokenRefreshError(t *testing.T) {
 	defer ts.Close()
 
 	client := NewRTTClient(ts.URL, "bad-token")
-	_, err := client.SearchDepartures("SHF", "20260511", "0900")
+	_, err := client.SearchDepartures("SHF", "20260511", "0900", "")
 	assert.Error(t, err)
 }
 
@@ -187,7 +187,7 @@ func TestRTTClient_InvalidTokenJSON(t *testing.T) {
 	defer ts.Close()
 
 	client := NewRTTClient(ts.URL, "ref")
-	_, err := client.SearchDepartures("SHF", "20260511", "0900")
+	_, err := client.SearchDepartures("SHF", "20260511", "0900", "")
 	assert.Error(t, err)
 }
 
@@ -203,7 +203,7 @@ func TestRTTClient_InvalidValidUntil(t *testing.T) {
 	defer ts.Close()
 
 	client := NewRTTClient(ts.URL, "ref")
-	sr, err := client.SearchDepartures("SHF", "20260511", "0900")
+	sr, err := client.SearchDepartures("SHF", "20260511", "0900", "")
 	require.NoError(t, err)
 	assert.NotNil(t, sr)
 }
@@ -221,7 +221,7 @@ func TestRTTClient_InvalidSearchJSON(t *testing.T) {
 	defer ts.Close()
 
 	client := NewRTTClient(ts.URL, "ref")
-	_, err := client.SearchDepartures("SHF", "20260511", "0900")
+	_, err := client.SearchDepartures("SHF", "20260511", "0900", "")
 	assert.Error(t, err)
 }
 
@@ -256,6 +256,6 @@ func TestRTTClient_APIError(t *testing.T) {
 	defer ts.Close()
 
 	client := NewRTTClient(ts.URL, "ref")
-	_, err := client.SearchDepartures("SHF", "20260511", "0900")
+	_, err := client.SearchDepartures("SHF", "20260511", "0900", "")
 	assert.Error(t, err)
 }
