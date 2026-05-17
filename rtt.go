@@ -299,9 +299,17 @@ type ServiceAPIResponse struct {
 	Service ServiceResponse `json:"service"`
 }
 
+type Reason struct {
+	Type      string `json:"type"`
+	Code      string `json:"code"`
+	ShortText string `json:"shortText"`
+	LongText  string `json:"longText"`
+}
+
 type ServiceResponse struct {
 	ScheduleMeta ServiceScheduleMeta `json:"scheduleMetadata"`
 	Locations    []ServiceLocation   `json:"locations"`
+	Reasons      []Reason            `json:"reasons"`
 }
 
 type ServiceLocation struct {

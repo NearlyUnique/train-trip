@@ -66,6 +66,7 @@
     {{if eq .Status "cancelled"}}<span class="badge badge-alert">Cancelled</span>{{end}}
     {{if eq .Status "missed"}}<span class="badge badge-alert">Missed</span>{{end}}
     {{if eq .Status "error"}}<span class="badge badge-alert">Unavailable</span>{{end}}
+    {{if and (eq .Status "cancelled") .CancelReason}}<p class="cancel-reason">Due to {{.CancelReason}}</p>{{end}}
   </div>
 
   {{if .TightConnection}}
@@ -78,26 +79,26 @@
     {{if .NextDeps}}
     <div class="next-train-details" {{if ge .ConnectionMins 0}}hidden{{end}}>
       <span class="time-label">Next available</span>
-      {{range .NextDeps}}<a class="time-chip{{if .IsGood}} time-good{{end}}"
+      {{range .NextDeps}}{{if eq .Status "cancelled"}}<span class="time-chip time-cancelled">{{.Time}}</span>{{else if eq .Status "departed"}}<span class="time-chip time-departed">{{.Time}}</span>{{else}}<a class="time-chip{{if .IsGood}} time-good{{end}}"
          hx-get="{{basePath}}/departures?origin={{$.InterchangeCRS}}&date={{$.InterchangeDate}}&after={{.Time}}&legs={{$.PriorLegsParam}}&to={{$.DestCRS}}"
          hx-target="#interchange-deps-{{$.N}}"
          hx-swap="innerHTML"
          hx-push-url="false"
-         {{if .AutoLoad}}hx-trigger="load"{{end}}>{{.Time}}</a>{{end}}
+         {{if .AutoLoad}}hx-trigger="load"{{end}}>{{.Time}}</a>{{end}}{{end}}
     </div>
     {{end}}
   </div>
   {{end}}
 
-  {{if and (eq .Status "missed") (not .TightConnection) .NextDeps}}
+  {{if and (or (eq .Status "missed") (eq .Status "cancelled")) (not .TightConnection) .NextDeps}}
   <div class="missed-next">
     <span class="time-label">Next available to {{.DestName}}</span>
-    {{range .NextDeps}}<a class="time-chip{{if .IsGood}} time-good{{end}}"
+    {{range .NextDeps}}{{if eq .Status "cancelled"}}<span class="time-chip time-cancelled">{{.Time}}</span>{{else if eq .Status "departed"}}<span class="time-chip time-departed">{{.Time}}</span>{{else}}<a class="time-chip{{if .IsGood}} time-good{{end}}"
        hx-get="{{basePath}}/departures?origin={{$.InterchangeCRS}}&date={{$.InterchangeDate}}&after={{.Time}}&legs={{$.PriorLegsParam}}&to={{$.DestCRS}}"
        hx-target="#interchange-deps-{{$.N}}"
        hx-swap="innerHTML"
        hx-push-url="false"
-       {{if .AutoLoad}}hx-trigger="load"{{end}}>{{.Time}}</a>{{end}}
+       {{if .AutoLoad}}hx-trigger="load"{{end}}>{{.Time}}</a>{{end}}{{end}}
   </div>
   {{end}}
 </div>

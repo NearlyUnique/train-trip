@@ -294,6 +294,8 @@ main { padding: 1rem 1.25rem; max-width: 680px; margin: 0 auto; }
   color: var(--uchu-green-9);
 }
 .time-chip.time-good:hover { background: var(--uchu-green-2); border-color: var(--uchu-green-6); }
+.time-chip.time-cancelled { opacity: 0.5; text-decoration: line-through; cursor: default; border-color: var(--uchu-red-4); color: var(--uchu-red-8); }
+.time-chip.time-departed  { opacity: 0.6; cursor: default; }
 
 /* Station autocomplete */
 .ac-wrap { position: relative; }

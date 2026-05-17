@@ -148,6 +148,7 @@ type NextDep struct {
 	Time     string // HH:MM
 	IsGood   bool   // true if ≥10 min buffer from interchange arrival
 	AutoLoad bool   // auto-trigger HTMX fetch on page render
+	Status   string // "on-time", "cancelled", "departed"
 }
 
 type LegCard struct {
@@ -167,6 +168,7 @@ type LegCard struct {
 	Platform        string
 	DelayMins       int
 	Status          string // "on-time" | "delayed" | "cancelled" | "missed"
+	CancelReason    string // human-readable cancellation reason, if known
 	Completed       bool   // true when arrival time has passed
 	TightConnection bool   // true when gap from prior leg is ≤ 10 min
 	ConnectionMins  int    // minutes available for the connection
@@ -310,7 +312,8 @@ func (s *server) handleCallingPoints(w http.ResponseWriter, r *http.Request) {
 			}
 			continue
 		}
-		if loc.TemporalData.DisplayAs == "PASS" {
+		switch loc.TemporalData.DisplayAs {
+		case "PASS", "CANCELLED", "CANCELLED_CALL":
 			continue
 		}
 		booked, rt := "", ""
@@ -430,8 +433,9 @@ func (s *server) buildLegCards(legs []Leg, legsParam string) []LegCard {
 		depHHMM := strings.ReplaceAll(card.DepRealtime, ":", "")
 		currentTime := now.Format("1504")
 		switch {
-		case isCancelled(svc, leg.Origin):
+		case isCancelled(svc, leg.Origin) || isDestCancelled(svc, leg.Dest):
 			card.Status = "cancelled"
+			card.CancelReason = cancelReason(svc)
 		case depHHMM != "" && depHHMM < currentTime && !card.isActualDep(svc, leg.Origin):
 			card.Status = "missed"
 		case card.DelayMins > 0:
@@ -471,7 +475,7 @@ func (s *server) annotateTightConnections(cards []LegCard, legs []Leg) {
 // available train to the destination below the card.
 func (s *server) annotateMissedLegs(cards []LegCard, legs []Leg, nowHHMM string) {
 	for i := range cards {
-		if cards[i].Status != "missed" || cards[i].TightConnection {
+		if (cards[i].Status != "missed" && cards[i].Status != "cancelled") || cards[i].TightConnection {
 			continue
 		}
 		depHHMM := strings.ReplaceAll(cards[i].DepRealtime, ":", "")
@@ -482,43 +486,67 @@ func (s *server) annotateMissedLegs(cards []LegCard, legs []Leg, nowHHMM string)
 			cards[i].PriorLegsParam = encodeLegs(legs[:i])
 		}
 		deps := s.nextDeparturesAfter(legs[i].Origin, legs[i].Date, nowHHMM, depHHMM, legs[i].Dest, cards[i].DestLongCode)
-		// For a missed standalone leg any next train to the destination is the right choice.
-		if len(deps) > 0 {
-			deps[0].IsGood = true
+		// For a missed standalone leg the first on-time train is the right choice.
+		for j := range deps {
+			if deps[j].Status == "on-time" {
+				deps[j].IsGood = true
+				break
+			}
 		}
 		cards[i].NextDeps = deps
 	}
 }
 
 // nextDeparturesAfter returns alternative departures from crs after arrHHMM,
-// skipping the booked connection (skipHHMM), filtered to services calling at
-// destCRS. It collects all tight departures (buffer < 10 min from arr) plus
-// the first good one (buffer ≥ 10 min).
+// nextDeparturesAfter returns all departures from crs toward destCRS returned
+// by RTT, skipping only non-passenger services and trains not calling at the
+// destination. Cancelled trains are included with Status="cancelled"; trains
+// that departed before skipHHMM get Status="departed".
 func (s *server) nextDeparturesAfter(crs, date, arrHHMM, skipHHMM, destCRS, destLongCode string) []NextDep {
 	sr, err := s.rtt.SearchDepartures(crs, date, arrHHMM, destCRS)
 	if err != nil {
 		return nil
 	}
 	arrMins := hhmm2mins(arrHHMM)
-	seen := map[string]bool{}
 	var deps []NextDep
 	for _, svc := range sr.Services {
 		if !svc.ScheduleMeta.InPassengerService || !serviceCallsAt(svc, destCRS, destLongCode) {
 			continue
 		}
-		dep := effectiveDep(svc.TemporalData)
-		if dep == "" || dep <= skipHHMM || seen[dep] {
+		dep, status := depStatus(svc.TemporalData)
+		if dep == "" {
 			continue
 		}
-		seen[dep] = true
-		buffer := hhmm2mins(dep) - arrMins
-		isGood := buffer >= 10
-		deps = append(deps, NextDep{Time: fmtTime(dep), IsGood: isGood})
-		if isGood {
-			break
+		if status != "cancelled" && dep <= skipHHMM {
+			status = "departed"
 		}
+		buffer := hhmm2mins(dep) - arrMins
+		deps = append(deps, NextDep{
+			Time:   fmtTime(dep),
+			IsGood: buffer >= 10 && status == "on-time",
+			Status: status,
+		})
 	}
 	return deps
+}
+
+// depStatus returns the departure HHMM and status ("on-time" or "cancelled")
+// for a service. Cancelled services return their scheduled time so they remain
+// visible to the user.
+func depStatus(td ServiceTemporalData) (string, string) {
+	if td.DisplayAs == "CANCELLED_CALL" || (td.Departure != nil && td.Departure.IsCancelled) {
+		if td.Departure == nil {
+			return "", ""
+		}
+		return isoToHHMM(td.Departure.ScheduleAdvertised), "cancelled"
+	}
+	if td.Departure == nil {
+		return "", ""
+	}
+	if dep := isoToHHMM(td.Departure.RealtimeForecast); dep != "" {
+		return dep, "on-time"
+	}
+	return isoToHHMM(td.Departure.ScheduleAdvertised), "on-time"
 }
 
 // effectiveDep returns the realtime departure HHMM for a service at the
@@ -580,6 +608,27 @@ func isCancelled(svc *ServiceResponse, crs string) bool {
 		}
 	}
 	return false
+}
+
+func isDestCancelled(svc *ServiceResponse, crs string) bool {
+	for _, loc := range svc.Locations {
+		if loc.CRS() == crs {
+			return loc.TemporalData.DisplayAs == "CANCELLED" ||
+				loc.TemporalData.DisplayAs == "CANCELLED_CALL" ||
+				(loc.TemporalData.Arrival != nil && loc.TemporalData.Arrival.IsCancelled)
+		}
+	}
+	return false
+}
+
+func cancelReason(svc *ServiceResponse) string {
+	if len(svc.Reasons) > 0 {
+		if svc.Reasons[0].LongText != "" {
+			return svc.Reasons[0].LongText
+		}
+		return delayCauses[svc.Reasons[0].Code]
+	}
+	return ""
 }
 
 func hasActualTime(loc ServiceLocation) bool {

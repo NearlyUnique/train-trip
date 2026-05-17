@@ -473,6 +473,9 @@ func TestBuildLegCards_CancelledStatus(t *testing.T) {
 			svc.Locations[0].TemporalData.DisplayAs = "CANCELLED_CALL"
 			return svc, nil
 		},
+		SearchDeparturesFunc: func(crs, date, fromTime, to string) (*SearchResponse, error) {
+			return &SearchResponse{}, nil
+		},
 	}
 	srv := newTestServer(t, mock)
 	legs := []Leg{{UID: "A1", Date: "20260511", Origin: "SHF", Dest: "MAN"}}
@@ -642,39 +645,62 @@ func TestNextDeparturesAfter_Error(t *testing.T) {
 	assert.Nil(t, deps)
 }
 
-func TestNextDeparturesAfter_TightThenGood(t *testing.T) {
-	// Returns: cancelled (filtered), non-passenger (filtered), tight dep, then good dep.
+func TestNextDeparturesAfter_AllStatuses(t *testing.T) {
+	// Verifies: cancelled shown with scheduled time, departed shown before skipHHMM,
+	// non-passenger filtered, duplicate minute not deduped, no early break.
 	mock := &rttAPIMock{
 		SearchDeparturesFunc: func(crs, date, fromTime, to string) (*SearchResponse, error) {
 			return &SearchResponse{Services: []Service{
-				// cancelled → filtered
+				// cancelled passenger service calling at dest → shown as "cancelled"
 				{ScheduleMeta: ServiceScheduleMeta{InPassengerService: true},
 					TemporalData: ServiceTemporalData{DisplayAs: "CANCELLED_CALL",
-						Departure: &TemporalPoint{ScheduleAdvertised: iso("0912"), RealtimeForecast: iso("0912")}}},
-				// non-passenger → filtered
+						Departure: &TemporalPoint{ScheduleAdvertised: iso("0912"), RealtimeForecast: iso("0912")}},
+					Destination: []StationStop{{Location: StopLocation{ShortCodes: []string{"LDS"}}}}},
+				// non-passenger → still filtered
 				{ScheduleMeta: ServiceScheduleMeta{InPassengerService: false},
 					TemporalData: ServiceTemporalData{DisplayAs: "CALL",
 						Departure: &TemporalPoint{ScheduleAdvertised: iso("0913"), RealtimeForecast: iso("0913")}}},
-				// dep <= skipHHMM ("0914" <= "0915") → filtered
+				// dep <= skipHHMM → "departed"
 				passengerDep("EARLY", "0914", "LDS"),
-				// no realtime → falls back to scheduled advertised at 0916
+				// second service at same minute as EARLY — no dedup, also "departed"
+				passengerDep("EARLY2", "0914", "LDS"),
+				// no realtime → falls back to scheduled at 0916, tight
 				{ScheduleMeta: ServiceScheduleMeta{InPassengerService: true},
 					TemporalData: ServiceTemporalData{DisplayAs: "CALL",
 						Departure: &TemporalPoint{ScheduleAdvertised: iso("0916"), RealtimeForecast: ""}},
 					Destination: []StationStop{{Location: StopLocation{ShortCodes: []string{"LDS"}}}}},
-				// good dep → included, breaks loop
+				// good dep — loop must NOT break here
 				passengerDep("GOOD", "0925", "LDS"),
+				// second good dep — must appear because there's no early break
+				passengerDep("GOOD2", "0935", "LDS"),
 			}}, nil
 		},
 	}
 	srv := newTestServer(t, mock)
 	// arrHHMM="0910", skipHHMM="0915", destCRS="LDS"
 	deps := srv.nextDeparturesAfter("MAN", "20260511", "0910", "0915", "LDS", "")
-	require.Len(t, deps, 2)
-	assert.Equal(t, "09:16", deps[0].Time)
-	assert.False(t, deps[0].IsGood) // 6 min buffer — tight
-	assert.Equal(t, "09:25", deps[1].Time)
-	assert.True(t, deps[1].IsGood) // 15 min buffer — good
+	require.Len(t, deps, 6)
+
+	assert.Equal(t, "09:12", deps[0].Time)
+	assert.Equal(t, "cancelled", deps[0].Status)
+	assert.False(t, deps[0].IsGood)
+
+	assert.Equal(t, "09:14", deps[1].Time)
+	assert.Equal(t, "departed", deps[1].Status)
+
+	assert.Equal(t, "09:14", deps[2].Time) // duplicate minute — both shown
+	assert.Equal(t, "departed", deps[2].Status)
+
+	assert.Equal(t, "09:16", deps[3].Time)
+	assert.Equal(t, "on-time", deps[3].Status)
+	assert.False(t, deps[3].IsGood) // 6 min buffer — tight
+
+	assert.Equal(t, "09:25", deps[4].Time)
+	assert.Equal(t, "on-time", deps[4].Status)
+	assert.True(t, deps[4].IsGood) // 15 min buffer — good
+
+	assert.Equal(t, "09:35", deps[5].Time) // shown because no early break
+	assert.True(t, deps[5].IsGood)
 }
 
 // --- direct helper tests ---
@@ -897,4 +923,111 @@ func TestIsCancelled(t *testing.T) {
 			TemporalData: ServiceTemporalData{DisplayAs: "CALL"}},
 	}}
 	assert.False(t, isCancelled(notCancelled, "SHF"))
+}
+
+func TestIsDestCancelled(t *testing.T) {
+	byCancelled := &ServiceResponse{Locations: []ServiceLocation{
+		{Location: StopLocation{ShortCodes: []string{"MIA"}},
+			TemporalData: ServiceTemporalData{DisplayAs: "CANCELLED"}},
+	}}
+	assert.True(t, isDestCancelled(byCancelled, "MIA"))
+	assert.False(t, isDestCancelled(byCancelled, "MAN")) // CRS not found
+
+	byArrFlag := &ServiceResponse{Locations: []ServiceLocation{
+		{Location: StopLocation{ShortCodes: []string{"MIA"}},
+			TemporalData: ServiceTemporalData{
+				DisplayAs: "CANCELLED",
+				Arrival:   &TemporalPoint{IsCancelled: true},
+			}},
+	}}
+	assert.True(t, isDestCancelled(byArrFlag, "MIA"))
+
+	// TERMINATES stop is still reachable — not cancelled as a destination
+	terminates := &ServiceResponse{Locations: []ServiceLocation{
+		{Location: StopLocation{ShortCodes: []string{"MCO"}},
+			TemporalData: ServiceTemporalData{DisplayAs: "TERMINATES"}},
+	}}
+	assert.False(t, isDestCancelled(terminates, "MCO"))
+}
+
+func TestCancelReason_APIText(t *testing.T) {
+	svc := &ServiceResponse{
+		Reasons: []Reason{{Code: "IB", LongText: "a points failure"}},
+	}
+	assert.Equal(t, "a points failure", cancelReason(svc))
+}
+
+func TestCancelReason_Fallback(t *testing.T) {
+	svc := &ServiceResponse{
+		Reasons: []Reason{{Code: "IB", LongText: ""}},
+	}
+	assert.Equal(t, "Points failure (including no fault found)", cancelReason(svc))
+}
+
+func TestCancelReason_NoReasons(t *testing.T) {
+	assert.Equal(t, "", cancelReason(&ServiceResponse{}))
+}
+
+// buildTerminatesService returns a ServiceResponse shaped like debug_service.json:
+// Liverpool (CALL) → Manchester Oxford Road (TERMINATES) → Manchester Airport (CANCELLED).
+func buildTerminatesService() *ServiceResponse {
+	return &ServiceResponse{
+		ScheduleMeta: ServiceScheduleMeta{
+			TrainReportingIdentity: "2A90",
+			Operator:               Operator{Name: "Northern"},
+		},
+		Locations: []ServiceLocation{
+			{
+				Location:     StopLocation{ShortCodes: []string{"LIV"}},
+				TemporalData: ServiceTemporalData{DisplayAs: "CALL", Departure: &TemporalPoint{ScheduleAdvertised: iso("1830"), RealtimeActual: iso("1927")}},
+			},
+			{
+				Location:     StopLocation{ShortCodes: []string{"MCO"}},
+				TemporalData: ServiceTemporalData{DisplayAs: "TERMINATES", Arrival: &TemporalPoint{ScheduleAdvertised: iso("1926"), RealtimeActual: iso("2031")}},
+			},
+			{
+				Location: StopLocation{ShortCodes: []string{"MIA"}},
+				TemporalData: ServiceTemporalData{DisplayAs: "CANCELLED",
+					Arrival: &TemporalPoint{ScheduleAdvertised: iso("1953"), IsCancelled: true}},
+			},
+		},
+		Reasons: []Reason{{Code: "IB", LongText: "a points failure"}},
+	}
+}
+
+func TestBuildLegCards_DestCancelled(t *testing.T) {
+	mock := &rttAPIMock{
+		GetServiceFunc: func(uid, date string) (*ServiceResponse, error) {
+			return buildTerminatesService(), nil
+		},
+		SearchDeparturesFunc: func(crs, date, fromTime, to string) (*SearchResponse, error) {
+			return &SearchResponse{}, nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	// Leg to Manchester Airport — service terminated early at Oxford Road
+	legs := []Leg{{UID: "G90090", Date: "20260517", Origin: "LIV", Dest: "MIA"}}
+	cards := srv.buildLegCards(legs, encodeLegs(legs))
+	require.Len(t, cards, 1)
+	assert.Equal(t, "cancelled", cards[0].Status)
+	assert.Equal(t, "a points failure", cards[0].CancelReason)
+}
+
+func TestCallingPoints_CancelledFiltered(t *testing.T) {
+	mock := &rttAPIMock{
+		GetServiceFunc: func(uid, date string) (*ServiceResponse, error) {
+			return buildTerminatesService(), nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	req := httptest.NewRequest("GET", "/calling/G90090/20260517?originCRS=LIV", nil)
+	req = mux.SetURLVars(req, map[string]string{"uid": "G90090", "date": "20260517"})
+	w := httptest.NewRecorder()
+	srv.handleCallingPoints(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	// TERMINATES stop (MCO) should appear
+	assert.Contains(t, body, "MCO")
+	// CANCELLED stop (MIA) should NOT appear
+	assert.NotContains(t, body, "MIA")
 }
