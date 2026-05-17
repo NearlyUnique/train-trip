@@ -12,6 +12,19 @@ import (
 	"github.com/gorilla/mux"
 )
 
+func stationsJSON(ss []Station) template.JS {
+	type jsStation struct {
+		CRS  string `json:"crs"`
+		Name string `json:"name"`
+	}
+	out := make([]jsStation, len(ss))
+	for i, s := range ss {
+		out[i] = jsStation{CRS: s.CRSCode, Name: s.Name}
+	}
+	b, _ := json.Marshal(out)
+	return template.JS(b)
+}
+
 func main() {
 	slog.SetLogLoggerLevel(slog.LevelDebug)
 
@@ -24,10 +37,7 @@ func main() {
 	tmpl, err := template.New("").Funcs(template.FuncMap{
 		"nowTime":  func() string { return nowHHMM() },
 		"basePath": func() string { return basePath },
-		"stationsJSON": func(ss []Station) template.JS {
-			b, _ := json.Marshal(ss)
-			return template.JS(b)
-		},
+		"stationsJSON": stationsJSON,
 		"abs": func(n int) int {
 			if n < 0 {
 				return -n

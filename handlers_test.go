@@ -15,6 +15,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestStationsJSONFields(t *testing.T) {
+	js := stationsJSON([]Station{{Name: "Sheffield", CRSCode: "SHF"}})
+	var result []map[string]any
+	require.NoError(t, json.Unmarshal([]byte(js), &result))
+	require.Len(t, result, 1)
+	assert.Equal(t, "SHF", result[0]["crs"], "autocomplete.js reads s.crs")
+	assert.Equal(t, "Sheffield", result[0]["name"], "autocomplete.js reads s.name")
+}
+
 // --- pure function tests ---
 
 func TestParseLeg(t *testing.T) {
@@ -144,10 +153,7 @@ func newTestServer(t *testing.T, mock rttAPI) *server {
 	tmpl, err := template.New("").Funcs(template.FuncMap{
 		"nowTime":  func() string { return "09:00" },
 		"basePath": func() string { return "" },
-		"stationsJSON": func(ss []Station) template.JS {
-			b, _ := json.Marshal(ss)
-			return template.JS(b)
-		},
+		"stationsJSON": stationsJSON,
 		"abs": func(n int) int {
 			if n < 0 {
 				return -n
