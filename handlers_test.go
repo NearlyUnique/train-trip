@@ -703,6 +703,24 @@ func TestNextDeparturesAfter_AllStatuses(t *testing.T) {
 	assert.True(t, deps[5].IsGood)
 }
 
+func TestNextDeparturesAfter_ExcludesBookedTrain(t *testing.T) {
+	// The booked connecting train (dep == skipHHMM) must not appear in NextDeps.
+	// Regression: it was showing as "departed" at 16:10 when skipHHMM was also 16:10.
+	mock := &rttAPIMock{
+		SearchDeparturesFunc: func(crs, date, fromTime, to string) (*SearchResponse, error) {
+			return &SearchResponse{Services: []Service{
+				passengerDep("BOOKED", "1610", "MAN"), // this IS the connecting train
+				passengerDep("NEXT", "1645", "MAN"),   // this is the actual alternative
+			}}, nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	deps := srv.nextDeparturesAfter("NUN", "20260518", "1608", "1610", "MAN", "")
+	require.Len(t, deps, 1)
+	assert.Equal(t, "16:45", deps[0].Time)
+	assert.Equal(t, "on-time", deps[0].Status)
+}
+
 // --- direct helper tests ---
 
 func TestIsActualDep(t *testing.T) {

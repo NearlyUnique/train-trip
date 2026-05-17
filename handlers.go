@@ -517,7 +517,10 @@ func (s *server) nextDeparturesAfter(crs, date, arrHHMM, skipHHMM, destCRS, dest
 		if dep == "" {
 			continue
 		}
-		if status != "cancelled" && dep <= skipHHMM {
+		if dep == skipHHMM {
+			continue // this is the booked connecting train, not an alternative
+		}
+		if status != "cancelled" && dep < skipHHMM {
 			status = "departed"
 		}
 		buffer := hhmm2mins(dep) - arrMins

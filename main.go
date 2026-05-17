@@ -30,7 +30,7 @@ func main() {
 
 	cfg := loadConfig()
 
-	rttClient := NewRTTClient(cfg.dataURL, cfg.rttToken)
+	rttClient := NewRTTClient(cfg.dataURL, cfg.rttToken, cfg.debug)
 
 	basePath := strings.TrimRight(os.Getenv("BASE_PATH"), "/")
 
@@ -73,6 +73,7 @@ type config struct {
 	addr     string
 	rttToken string
 	dataURL  string
+	debug    bool
 }
 
 func loadConfig() config {
@@ -89,6 +90,7 @@ func loadConfig() config {
 		addr:     ":" + port,
 		rttToken: os.Getenv("RTT_TOKEN"),
 		dataURL:  dataURL,
+		debug:    os.Getenv("DEBUG") != "",
 	}
 }
 

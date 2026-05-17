@@ -18,6 +18,7 @@ const cacheTTL = 25 * time.Second
 type RTTClient struct {
 	dataURL      string
 	refreshToken string // long-lived token from .env, used only to obtain access tokens
+	debug        bool
 
 	tokenMu     sync.Mutex
 	accessToken string
@@ -32,10 +33,11 @@ type cacheEntry struct {
 	at   time.Time
 }
 
-func NewRTTClient(dataURL, refreshToken string) *RTTClient {
+func NewRTTClient(dataURL, refreshToken string, debug bool) *RTTClient {
 	return &RTTClient{
 		dataURL:      dataURL,
 		refreshToken: refreshToken,
+		debug:        debug,
 		cache:        make(map[string]cacheEntry),
 	}
 }
@@ -156,8 +158,9 @@ func (c *RTTClient) SearchDepartures(crs, date, fromTime, to string) (*SearchRes
 	if err != nil {
 		return nil, err
 	}
-	//dump body to file for debugging
-	os.WriteFile("debug.json", body, 0644)
+	if c.debug {
+		os.WriteFile("debug.json", body, 0644)
+	}
 	var sr SearchResponse
 	if err := json.Unmarshal(body, &sr); err != nil {
 		return nil, err
@@ -177,8 +180,9 @@ func (c *RTTClient) GetService(uid, date string) (*ServiceResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	//dump body to file for debugging
-	os.WriteFile("debug_service.json", body, 0644)
+	if c.debug {
+		os.WriteFile("debug_service.json", body, 0644)
+	}
 	var wrapper ServiceAPIResponse
 	if err := json.Unmarshal(body, &wrapper); err != nil {
 		return nil, err
