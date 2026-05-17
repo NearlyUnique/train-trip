@@ -148,6 +148,12 @@ func newTestServer(t *testing.T, mock rttAPI) *server {
 			b, _ := json.Marshal(ss)
 			return template.JS(b)
 		},
+		"abs": func(n int) int {
+			if n < 0 {
+				return -n
+			}
+			return n
+		},
 	}).ParseGlob("templates/*.html")
 	require.NoError(t, err)
 	return &server{rtt: mock, tmpl: tmpl}
@@ -774,6 +780,96 @@ func TestBuildLegCards_ActualDepartedNotMissed(t *testing.T) {
 	assert.Equal(t, "08:01", cards[0].DepRealtime) // shows actual departure time
 	assert.Equal(t, "08:46", cards[0].ArrRealtime)
 	assert.Equal(t, 1, cards[0].DelayMins)
+}
+
+func makeSvcForTransit() *ServiceResponse {
+	return &ServiceResponse{
+		Locations: []ServiceLocation{
+			{Location: StopLocation{ShortCodes: []string{"CMB"}, Description: "Cambridge North"},
+				TemporalData: ServiceTemporalData{Departure: &TemporalPoint{ScheduleAdvertised: iso("1210"), RealtimeActual: iso("1210")}}},
+			{Location: StopLocation{ShortCodes: []string{"CBG"}, Description: "Cambridge"},
+				TemporalData: ServiceTemporalData{
+					Arrival:   &TemporalPoint{ScheduleAdvertised: iso("1216"), RealtimeActual: iso("1216")},
+					Departure: &TemporalPoint{ScheduleAdvertised: iso("1219"), RealtimeActual: iso("1218")}}}, // 1m early
+			{Location: StopLocation{ShortCodes: []string{"AUD"}, Description: "Audley End"},
+				LocationMeta: ServiceLocationMeta{Platform: struct {
+					Planned  string `json:"planned"`
+					Actual   string `json:"actual"`
+					Forecast string `json:"forecast"`
+				}{Forecast: "1"}},
+				TemporalData: ServiceTemporalData{
+					Arrival:   &TemporalPoint{ScheduleAdvertised: iso("1239"), RealtimeForecast: iso("1238")}, // 1m early
+					Departure: &TemporalPoint{ScheduleAdvertised: iso("1239"), RealtimeForecast: iso("1239")}}},
+			{Location: StopLocation{ShortCodes: []string{"BIS"}, Description: "Bishops Stortford"},
+				TemporalData: ServiceTemporalData{
+					Arrival:   &TemporalPoint{ScheduleAdvertised: iso("1257"), RealtimeForecast: iso("1257")},
+					Departure: &TemporalPoint{ScheduleAdvertised: iso("1257"), RealtimeForecast: iso("1257")}}},
+			{Location: StopLocation{ShortCodes: []string{"LST"}, Description: "London Liverpool Street"},
+				LocationMeta: ServiceLocationMeta{Platform: struct {
+					Planned  string `json:"planned"`
+					Actual   string `json:"actual"`
+					Forecast string `json:"forecast"`
+				}{Forecast: "3"}},
+				TemporalData: ServiceTemporalData{
+					Arrival: &TemporalPoint{ScheduleAdvertised: iso("1342"), RealtimeForecast: iso("1341")}}},
+		},
+	}
+}
+
+func TestBuildInTransitInfo(t *testing.T) {
+	t.Run("in transit between intermediate stops", func(t *testing.T) {
+		info := buildInTransitInfo(makeSvcForTransit(), "CMB", "LST")
+		assert.True(t, info.Active)
+		assert.Equal(t, "Cambridge", info.LastStopName)
+		assert.Equal(t, -1, info.RunningDelayMins)    // Cambridge departed 1m early
+		assert.Equal(t, "Audley End", info.NextStopName)
+		assert.Equal(t, "12:38", info.NextStopTime)
+		assert.Equal(t, -1, info.NextStopDelayMins)   // Audley End forecast 1m early
+		assert.Equal(t, "1", info.NextStopPlatform)   // platform.forecast = "1"
+		assert.Equal(t, 3, info.StopsRemaining)       // AUD, BIS, LST
+	})
+
+	t.Run("not in transit — origin not yet departed", func(t *testing.T) {
+		svc := makeSvcForTransit()
+		svc.Locations[0].TemporalData.Departure = &TemporalPoint{RealtimeForecast: iso("1210")}
+		info := buildInTransitInfo(svc, "CMB", "LST")
+		assert.False(t, info.Active)
+	})
+
+	t.Run("not in transit — destination already arrived", func(t *testing.T) {
+		svc := makeSvcForTransit()
+		svc.Locations[4].TemporalData.Arrival = &TemporalPoint{RealtimeActual: iso("1341")}
+		info := buildInTransitInfo(svc, "CMB", "LST")
+		assert.False(t, info.Active)
+	})
+
+	t.Run("in transit between origin and first stop", func(t *testing.T) {
+		svc := makeSvcForTransit()
+		// Remove actual times from Cambridge — train has only left Cambridge North.
+		svc.Locations[1].TemporalData.Arrival = &TemporalPoint{RealtimeForecast: iso("1216")}
+		svc.Locations[1].TemporalData.Departure = &TemporalPoint{RealtimeForecast: iso("1218")}
+		info := buildInTransitInfo(svc, "CMB", "LST")
+		assert.True(t, info.Active)
+		assert.Equal(t, "Cambridge North", info.LastStopName)
+		assert.Equal(t, "Cambridge", info.NextStopName)
+		assert.Equal(t, "12:16", info.NextStopTime)
+		assert.Equal(t, 4, info.StopsRemaining) // CBG, AUD, BIS, LST
+	})
+
+	t.Run("unknown CRS returns inactive", func(t *testing.T) {
+		info := buildInTransitInfo(makeSvcForTransit(), "XYZ", "LST")
+		assert.False(t, info.Active)
+	})
+}
+
+func TestBuildLegCards_DestPlatform(t *testing.T) {
+	svc := makeSvcForTransit()
+	mock := &rttAPIMock{GetServiceFunc: func(uid, date string) (*ServiceResponse, error) { return svc, nil }}
+	srv := newTestServer(t, mock)
+	legs := []Leg{{UID: "A1", Date: "20260511", Origin: "CMB", Dest: "LST"}}
+	cards := srv.buildLegCards(legs, encodeLegs(legs))
+	require.Len(t, cards, 1)
+	assert.Equal(t, "3", cards[0].DestPlatform) // forecast platform on LST
 }
 
 func TestIsCancelled(t *testing.T) {

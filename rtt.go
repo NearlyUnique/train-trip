@@ -243,8 +243,20 @@ type TemporalPoint struct {
 
 type ServiceLocationMeta struct {
 	Platform struct {
-		Planned string `json:"planned"`
+		Planned  string `json:"planned"`
+		Actual   string `json:"actual"`
+		Forecast string `json:"forecast"`
 	} `json:"platform"`
+}
+
+func bestPlatform(meta ServiceLocationMeta) string {
+	if meta.Platform.Actual != "" {
+		return meta.Platform.Actual
+	}
+	if meta.Platform.Forecast != "" {
+		return meta.Platform.Forecast
+	}
+	return meta.Platform.Planned
 }
 
 type ServiceScheduleMeta struct {

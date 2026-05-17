@@ -28,6 +28,12 @@ func main() {
 			b, _ := json.Marshal(ss)
 			return template.JS(b)
 		},
+		"abs": func(n int) int {
+			if n < 0 {
+				return -n
+			}
+			return n
+		},
 	}).ParseGlob("templates/*.html")
 	if err != nil {
 		slog.Error("parse templates", "err", err)

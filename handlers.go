@@ -176,6 +176,19 @@ type LegCard struct {
 	InterchangeAfter string // HHMM arrival of prior leg at interchange
 	PriorLegsParam  string // encoded legs before this one, for departure navigation
 	DestLongCode    string // NLC/STANOX long code for dest, for departure filtering
+	DestPlatform    string
+	InTransit       InTransitInfo
+}
+
+type InTransitInfo struct {
+	Active            bool
+	LastStopName      string
+	NextStopName      string
+	NextStopTime      string
+	NextStopDelayMins int    // negative = early vs schedule; positive = late
+	NextStopPlatform  string
+	RunningDelayMins  int    // lateness at last actual stop; negative = early
+	StopsRemaining    int    // from next stop to destination, inclusive
 }
 
 // -- handlers --
@@ -390,7 +403,7 @@ func (s *server) buildLegCards(legs []Leg, legsParam string) []LegCard {
 				}
 				card.DepBooked = fmtTime(booked)
 				card.DepRealtime = fmtTime(rt)
-				card.Platform = loc.LocationMeta.Platform.Planned
+				card.Platform = bestPlatform(loc.LocationMeta)
 				card.DelayMins = delayMins(booked, rt)
 			}
 			if loc.CRS() == leg.Dest {
@@ -404,11 +417,14 @@ func (s *server) buildLegCards(legs []Leg, legsParam string) []LegCard {
 				}
 				card.ArrBooked = fmtTime(booked)
 				card.ArrRealtime = fmtTime(rt)
+				card.DestPlatform = bestPlatform(loc.LocationMeta)
 				if len(loc.Location.LongCodes) > 0 {
 					card.DestLongCode = loc.Location.LongCodes[0]
 				}
 			}
 		}
+
+		card.InTransit = buildInTransitInfo(svc, leg.Origin, leg.Dest)
 
 		// Determine status
 		depHHMM := strings.ReplaceAll(card.DepRealtime, ":", "")
@@ -564,6 +580,113 @@ func isCancelled(svc *ServiceResponse, crs string) bool {
 		}
 	}
 	return false
+}
+
+func hasActualTime(loc ServiceLocation) bool {
+	dep, arr := loc.TemporalData.Departure, loc.TemporalData.Arrival
+	return (dep != nil && dep.RealtimeActual != "") || (arr != nil && arr.RealtimeActual != "")
+}
+
+func firstActualTime(loc ServiceLocation) string {
+	if t := bestTime(loc.TemporalData.Arrival); t != "" {
+		return fmtTime(t)
+	}
+	return fmtTime(bestTime(loc.TemporalData.Departure))
+}
+
+// findSegment returns the slice of locations from originCRS to destCRS (inclusive),
+// or nil if either CRS is not found or origin comes after dest.
+func findSegment(svc *ServiceResponse, originCRS, destCRS string) []ServiceLocation {
+	originIdx, destIdx := -1, -1
+	for i, loc := range svc.Locations {
+		if loc.CRS() == originCRS {
+			originIdx = i
+		}
+		if loc.CRS() == destCRS {
+			destIdx = i
+		}
+	}
+	if originIdx < 0 || destIdx < 0 || originIdx >= destIdx {
+		return nil
+	}
+	return svc.Locations[originIdx : destIdx+1]
+}
+
+// signedRunningDelay returns the departure (or arrival) lateness in minutes for
+// a location where actual times are recorded. Negative means early.
+func signedRunningDelay(loc ServiceLocation) int {
+	tp := loc.TemporalData.Departure
+	if tp == nil {
+		tp = loc.TemporalData.Arrival
+	}
+	if tp == nil {
+		return 0
+	}
+	b := hhmm2mins(isoToHHMM(tp.ScheduleAdvertised))
+	r := hhmm2mins(isoToHHMM(tp.RealtimeActual))
+	if b < 0 || r < 0 {
+		return 0
+	}
+	return r - b
+}
+
+// signedArrivalDelay returns the arrival lateness in minutes for an upcoming
+// stop using the forecast time vs schedule. Negative means early.
+func signedArrivalDelay(loc ServiceLocation) int {
+	arr := loc.TemporalData.Arrival
+	if arr == nil {
+		return 0
+	}
+	b := hhmm2mins(isoToHHMM(arr.ScheduleAdvertised))
+	rt := hhmm2mins(bestTime(arr))
+	if b < 0 || rt < 0 {
+		return 0
+	}
+	return rt - b
+}
+
+func buildInTransitInfo(svc *ServiceResponse, originCRS, destCRS string) InTransitInfo {
+	segment := findSegment(svc, originCRS, destCRS)
+	if segment == nil {
+		return InTransitInfo{}
+	}
+
+	// Not in transit if origin hasn't actually departed.
+	originDep := segment[0].TemporalData.Departure
+	if originDep == nil || originDep.RealtimeActual == "" {
+		return InTransitInfo{}
+	}
+	// Not in transit if destination has already recorded actual arrival.
+	destArr := segment[len(segment)-1].TemporalData.Arrival
+	if destArr != nil && destArr.RealtimeActual != "" {
+		return InTransitInfo{}
+	}
+
+	// Walk segment to find the last stop with any actual time recorded.
+	lastIdx := 0
+	for i, loc := range segment {
+		if hasActualTime(loc) {
+			lastIdx = i
+		}
+	}
+
+	info := InTransitInfo{
+		Active:           true,
+		LastStopName:     segment[lastIdx].Location.Description,
+		RunningDelayMins: signedRunningDelay(segment[lastIdx]),
+	}
+
+	nextIdx := lastIdx + 1
+	if nextIdx >= len(segment) {
+		return info
+	}
+	next := segment[nextIdx]
+	info.NextStopName = next.Location.Description
+	info.NextStopTime = firstActualTime(next)
+	info.NextStopPlatform = bestPlatform(next.LocationMeta)
+	info.NextStopDelayMins = signedArrivalDelay(next)
+	info.StopsRemaining = len(segment) - nextIdx
+	return info
 }
 
 // delayMins computes delay in minutes between booked and realtime HHMM strings.

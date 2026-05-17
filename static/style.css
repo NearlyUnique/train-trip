@@ -191,8 +191,8 @@ main { padding: 1rem 1.25rem; max-width: 680px; margin: 0 auto; }
 }
 .time-block { display: flex; flex-direction: column; }
 .time-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
-.time-booked { font-size: 1.6rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; }
-.time-real { font-size: 1rem; color: var(--warn-text); font-variant-numeric: tabular-nums; }
+.leg-times .time-booked { font-size: 1.6rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.leg-times .time-real { font-size: 1rem; color: var(--warn-text); font-variant-numeric: tabular-nums; }
 
 .delay-badge {
   display: inline-block;
@@ -224,6 +224,25 @@ main { padding: 1rem 1.25rem; max-width: 680px; margin: 0 auto; }
 .badge-alert { background: var(--uchu-red-8);  color: var(--uchu-yang); }
 
 .empty { color: var(--muted); padding: 1rem 0; }
+
+/* In-transit position indicator */
+.leg-in-transit {
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  background: var(--bg3, var(--bg2));
+  border: 1px solid var(--border);
+}
+.transit-running   { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); display: block; margin-bottom: 0.3rem; }
+.transit-stops     { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.transit-last      { font-weight: 600; }
+.transit-next      { font-weight: 600; }
+.transit-time      { font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+.transit-plat      { font-size: 0.8rem; color: var(--muted); }
+.transit-remaining { display: block; margin-top: 0.25rem; font-size: 0.8rem; color: var(--muted); }
+.early-badge       { background: var(--ok); color: var(--uchu-yin); }
+/* Pre-departure: make origin platform more prominent */
+.platform-predep   { font-size: 1rem; font-weight: 700; color: var(--fg, inherit); }
 
 /* Tight connection indicator */
 .tight-connection { margin-top: 0.6rem; }

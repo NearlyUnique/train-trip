@@ -8,13 +8,13 @@
   <div class="leg-route">
     <span class="leg-origin">{{.OriginName}}</span>
     <span class="leg-arrow">→</span>
-    <span class="leg-dest">{{.DestName}}</span>
+    <span class="leg-dest">{{.DestName}}{{if .DestPlatform}} (Plat {{.DestPlatform}}){{end}}</span>
   </div>
 
   <div class="leg-service">
     <span class="train-id">{{.TrainID}}</span>
     <span class="operator">{{.Operator}}</span>
-    {{if .Platform}}<span class="platform">Platform {{.Platform}}</span>{{end}}
+    {{if .Platform}}<span class="platform{{if not .InTransit.Active}} platform-predep{{end}}">Platform {{.Platform}}</span>{{end}}
   </div>
 
   <div class="leg-times">
@@ -37,6 +37,28 @@
     </div>
     {{end}}
   </div>
+
+  {{if .InTransit.Active}}
+  <div class="leg-in-transit">
+    <span class="transit-running">
+      {{- if lt .InTransit.RunningDelayMins 0 -}}{{abs .InTransit.RunningDelayMins}}m early
+      {{- else if gt .InTransit.RunningDelayMins 0 -}}{{.InTransit.RunningDelayMins}}m late
+      {{- else -}}On time
+      {{- end -}}
+    </span>
+    <div class="transit-stops">
+      <span class="transit-last">{{.InTransit.LastStopName}}</span>
+      <span class="leg-arrow">→</span>
+      <span class="transit-next">{{.InTransit.NextStopName}}</span>
+      {{if .InTransit.NextStopTime}}<span class="transit-time">{{.InTransit.NextStopTime}}
+        {{- if lt .InTransit.NextStopDelayMins 0}}<em class="delay-badge early-badge">-{{abs .InTransit.NextStopDelayMins}}m</em>
+        {{- else if gt .InTransit.NextStopDelayMins 0}}<em class="delay-badge">+{{.InTransit.NextStopDelayMins}}m</em>{{end}}
+      </span>{{end}}
+      {{if .InTransit.NextStopPlatform}}<span class="transit-plat">plat {{.InTransit.NextStopPlatform}}</span>{{end}}
+    </div>
+    <span class="transit-remaining">{{.InTransit.StopsRemaining}} stop{{if gt .InTransit.StopsRemaining 1}}s{{end}} remaining</span>
+  </div>
+  {{end}}
 
   <div class="leg-status">
     {{if eq .Status "on-time"}}<span class="badge badge-ok">On time</span>{{end}}
