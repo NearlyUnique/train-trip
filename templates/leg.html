@@ -5,69 +5,97 @@
      hx-trigger="every 5m"
      hx-swap="outerHTML">
 
-  <div class="leg-route">
-    <span class="leg-origin">{{.OriginName}}</span>
-    <span class="leg-arrow">→</span>
-    <span class="leg-dest">{{.DestName}}{{if .DestPlatform}} (Plat {{.DestPlatform}}){{end}}</span>
+  <!-- Header: operator + status badge -->
+  <div class="card-header">
+    <div class="operator-row">
+      <span class="operator-name">{{.Operator}}</span>
+      <span class="train-id-small">{{.TrainID}}</span>
+    </div>
+    {{if eq .Status "on-time"}}<span class="status-badge badge-ok"><i class="ti ti-check" aria-hidden="true"></i> On time</span>
+    {{else if eq .Status "delayed"}}<span class="status-badge badge-warn"><i class="ti ti-clock" aria-hidden="true"></i> {{.DelayMins}} min late</span>
+    {{else if eq .Status "cancelled"}}<span class="status-badge badge-alert"><i class="ti ti-x" aria-hidden="true"></i> Cancelled</span>
+    {{else if eq .Status "missed"}}<span class="status-badge badge-alert"><i class="ti ti-alert-triangle" aria-hidden="true"></i> Missed</span>
+    {{else}}<span class="status-badge badge-muted"><i class="ti ti-alert-circle" aria-hidden="true"></i> Unavailable</span>{{end}}
   </div>
 
-  <div class="leg-service">
-    <span class="train-id">{{.TrainID}}</span>
-    <span class="operator">{{.Operator}}</span>
-    {{if .Platform}}<span class="platform{{if not .InTransit.Active}} platform-predep{{end}}">Platform {{.Platform}}</span>{{end}}
+  <!-- Route: 3-column spine layout -->
+  <div class="route-section">
+    <div class="origin-dest">
+
+      <div class="station-col">
+        <div class="station-name">{{.OriginName}}</div>
+        <div class="time-row">
+          <span class="time-planned {{if or (eq .Status "delayed") (eq .Status "cancelled") (eq .Status "missed")}}strikethrough{{end}}">{{.DepBooked}}</span>
+          {{if ne .DepBooked .DepRealtime}}
+          <span class="time-actual {{if eq .Status "cancelled"}}cancelled{{end}}">
+            {{- if eq .Status "cancelled"}}Cancelled{{else}}{{.DepRealtime}}{{if gt .DelayMins 0}} <em class="delay-badge">+{{.DelayMins}}m</em>{{end}}{{end -}}
+          </span>
+          {{end}}
+        </div>
+        <div class="platform-tag">
+          Platform <span class="platform-num {{if not .Platform}}unknown{{end}}">{{if .Platform}}{{.Platform}}{{else}}TBC{{end}}</span>
+        </div>
+      </div>
+
+      <div class="route-spine">
+        <div class="spine-dot"></div>
+        <div class="spine-line"></div>
+        <i class="ti ti-chevron-down spine-arrow" aria-hidden="true"></i>
+      </div>
+
+      <div class="station-col dest-col">
+        <div class="station-name">{{.DestName}}</div>
+        {{if .ArrBooked}}
+        <div class="time-row">
+          <span class="time-planned {{if or (eq .Status "delayed") (eq .Status "cancelled") (eq .Status "missed")}}strikethrough{{end}}">{{.ArrBooked}}</span>
+          {{if and .ArrRealtime (ne .ArrBooked .ArrRealtime)}}
+          <span class="time-actual">{{.ArrRealtime}}</span>
+          {{end}}
+        </div>
+        {{end}}
+        <div class="platform-tag dest-platform">
+          Platform <span class="platform-num {{if not .DestPlatform}}unknown{{end}}">{{if .DestPlatform}}{{.DestPlatform}}{{else if eq .Status "cancelled"}}N/A{{else}}TBC{{end}}</span>
+        </div>
+      </div>
+
+    </div>
   </div>
 
-  <div class="leg-times">
-    <div class="time-block">
-      <span class="time-label">Departs</span>
-      <span class="time-booked">{{.DepBooked}}</span>
-      {{if ne .DepBooked .DepRealtime}}
-      <span class="time-real">{{.DepRealtime}}
-        {{if gt .DelayMins 0}}<em class="delay-badge">+{{.DelayMins}}m</em>{{end}}
-      </span>
-      {{end}}
+  <!-- Disruption banner -->
+  {{if or (eq .Status "delayed") (and (eq .Status "cancelled") .CancelReason)}}
+  <div class="delay-banner {{if eq .Status "cancelled"}}danger{{else}}warning{{end}}">
+    <i class="ti {{if eq .Status "cancelled"}}ti-alert-circle{{else}}ti-alert-triangle{{end}}" aria-hidden="true"></i>
+    <div class="banner-reason">
+      <strong>{{if and (eq .Status "cancelled") .CancelReason}}{{.CancelReason}}{{else}}Delayed {{.DelayMins}} min{{end}}</strong>
     </div>
-    {{if .ArrBooked}}
-    <div class="time-block">
-      <span class="time-label">Arrives</span>
-      <span class="time-booked">{{.ArrBooked}}</span>
-      {{if ne .ArrBooked .ArrRealtime}}
-      <span class="time-real">{{.ArrRealtime}}</span>
-      {{end}}
-    </div>
-    {{end}}
-  </div>
-
-  {{if .InTransit.Active}}
-  <div class="leg-in-transit">
-    <span class="transit-running">
-      {{- if lt .InTransit.RunningDelayMins 0 -}}{{abs .InTransit.RunningDelayMins}}m early
-      {{- else if gt .InTransit.RunningDelayMins 0 -}}{{.InTransit.RunningDelayMins}}m late
-      {{- else -}}On time
-      {{- end -}}
-    </span>
-    <div class="transit-stops">
-      <span class="transit-last">{{.InTransit.LastStopName}}</span>
-      <span class="leg-arrow">→</span>
-      <span class="transit-next">{{.InTransit.NextStopName}}</span>
-      {{if .InTransit.NextStopTime}}<span class="transit-time">{{.InTransit.NextStopTime}}
-        {{- if lt .InTransit.NextStopDelayMins 0}}<em class="delay-badge early-badge">-{{abs .InTransit.NextStopDelayMins}}m</em>
-        {{- else if gt .InTransit.NextStopDelayMins 0}}<em class="delay-badge">+{{.InTransit.NextStopDelayMins}}m</em>{{end}}
-      </span>{{end}}
-      {{if .InTransit.NextStopPlatform}}<span class="transit-plat">plat {{.InTransit.NextStopPlatform}}</span>{{end}}
-    </div>
-    <span class="transit-remaining">{{.InTransit.StopsRemaining}} stop{{if gt .InTransit.StopsRemaining 1}}s{{end}} remaining</span>
   </div>
   {{end}}
 
-  <div class="leg-status">
-    {{if eq .Status "on-time"}}<span class="badge badge-ok">On time</span>{{end}}
-    {{if eq .Status "delayed"}}<span class="badge badge-warn">Delayed {{.DelayMins}}m</span>{{end}}
-    {{if eq .Status "cancelled"}}<span class="badge badge-alert">Cancelled</span>{{end}}
-    {{if eq .Status "missed"}}<span class="badge badge-alert">Missed</span>{{end}}
-    {{if eq .Status "error"}}<span class="badge badge-alert">Unavailable</span>{{end}}
-    {{if and (eq .Status "cancelled") .CancelReason}}<p class="cancel-reason">Due to {{.CancelReason}}</p>{{end}}
+  <!-- Progress (only when in transit) -->
+  {{if .InTransit.Active}}
+  <hr class="divider">
+  <div class="progress-section">
+    <div class="progress-status-text">
+      {{.InTransit.LastStopName}} → {{.InTransit.NextStopName}}
+      {{- if .InTransit.NextStopTime}} · <strong>{{.InTransit.NextStopTime}}</strong>{{end}}
+      {{- if lt .InTransit.RunningDelayMins 0}} · <em class="delay-badge early-badge">{{abs .InTransit.RunningDelayMins}}m early</em>
+      {{- else if gt .InTransit.RunningDelayMins 0}} · <em class="delay-badge">{{.InTransit.RunningDelayMins}}m late</em>{{end}}
+    </div>
+    {{if .InTransit.ProgressPercent}}
+    <div class="progress-bar-wrap">
+      <div class="progress-fill" style="width:{{.InTransit.ProgressPercent}}%;"></div>
+      <span class="progress-train-icon" style="left:{{.InTransit.ProgressPercent}}%;" aria-hidden="true">🚆</span>
+    </div>
+    <div class="progress-labels">
+      <span>{{.OriginName}}</span>
+      {{if .InTransit.StopsRemaining}}<span class="progress-remaining">{{.InTransit.StopsRemaining}} stop{{if gt .InTransit.StopsRemaining 1}}s{{end}} remaining</span>{{end}}
+      <span>{{.DestName}}</span>
+    </div>
+    {{else if .InTransit.StopsRemaining}}
+    <span class="transit-remaining">{{.InTransit.StopsRemaining}} stop{{if gt .InTransit.StopsRemaining 1}}s{{end}} remaining</span>
+    {{end}}
   </div>
+  {{end}}
 
   {{if .TightConnection}}
   <div class="tight-connection">
@@ -99,5 +127,6 @@
        hx-push-url="false">{{.Time}}</a>{{end}}{{end}}
   </div>
   {{end}}
+
 </div>
 {{end}}

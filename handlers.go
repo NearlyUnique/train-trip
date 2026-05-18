@@ -193,6 +193,7 @@ type InTransitInfo struct {
 	NextStopPlatform  string
 	RunningDelayMins  int    // lateness at last actual stop; negative = early
 	StopsRemaining    int    // from next stop to destination, inclusive
+	ProgressPercent   int    // 4–100, based on actual dep vs scheduled arr
 }
 
 // -- handlers --
@@ -755,6 +756,25 @@ func buildInTransitInfo(svc *ServiceResponse, originCRS, destCRS string) InTrans
 	info.NextStopPlatform = bestPlatform(next.LocationMeta)
 	info.NextStopDelayMins = signedArrivalDelay(next)
 	info.StopsRemaining = len(segment) - nextIdx
+
+	depMins := hhmm2mins(isoToHHMM(originDep.RealtimeActual))
+	if depMins >= 0 && destArr != nil {
+		arrTime := isoToHHMM(destArr.RealtimeForecast)
+		if arrTime == "" {
+			arrTime = isoToHHMM(destArr.ScheduleAdvertised)
+		}
+		if arrMins := hhmm2mins(arrTime); arrMins > depMins {
+			now := time.Now()
+			pct := (now.Hour()*60+now.Minute()-depMins) * 100 / (arrMins - depMins)
+			if pct < 4 {
+				pct = 4
+			} else if pct > 100 {
+				pct = 100
+			}
+			info.ProgressPercent = pct
+		}
+	}
+
 	return info
 }
 
