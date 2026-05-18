@@ -72,19 +72,18 @@
   {{if .TightConnection}}
   <div class="tight-connection">
     <button class="tight-btn" type="button"
-            aria-expanded="{{if lt .ConnectionMins 0}}true{{else}}false{{end}}"
+            aria-expanded="{{if lt .ConnectionMins 5}}true{{else}}false{{end}}"
             onclick="var d=this.nextElementSibling;var open=d.hidden;d.hidden=!open;this.setAttribute('aria-expanded',open)">
       {{if lt .ConnectionMins 0}}⚠ Missed connection{{else}}🍀 {{.ConnectionMins}} min connection{{end}}
     </button>
     {{if .NextDeps}}
-    <div class="next-train-details" {{if ge .ConnectionMins 0}}hidden{{end}}>
+    <div class="next-train-details" {{if ge .ConnectionMins 5}}hidden{{end}}>
       <span class="time-label">Next available</span>
       {{range .NextDeps}}{{if eq .Status "cancelled"}}<span class="time-chip time-cancelled">{{.Time}}</span>{{else if eq .Status "departed"}}<span class="time-chip time-departed">{{.Time}}</span>{{else}}<a class="time-chip{{if .IsGood}} time-good{{end}}"
-         hx-get="{{basePath}}/departures?origin={{$.InterchangeCRS}}&date={{$.InterchangeDate}}&after={{.Time}}&legs={{$.PriorLegsParam}}&to={{$.DestCRS}}"
+         hx-get="{{basePath}}/leg/0?legs={{.UID}}|{{.Date}}|{{$.InterchangeCRS}}|{{$.DestCRS}}"
          hx-target="#interchange-deps-{{$.N}}"
          hx-swap="innerHTML"
-         hx-push-url="false"
-         {{if .AutoLoad}}hx-trigger="load"{{end}}>{{.Time}}</a>{{end}}{{end}}
+         hx-push-url="false">{{.Time}}</a>{{end}}{{end}}
     </div>
     {{end}}
   </div>
@@ -94,11 +93,10 @@
   <div class="missed-next">
     <span class="time-label">Next available to {{.DestName}}</span>
     {{range .NextDeps}}{{if eq .Status "cancelled"}}<span class="time-chip time-cancelled">{{.Time}}</span>{{else if eq .Status "departed"}}<span class="time-chip time-departed">{{.Time}}</span>{{else}}<a class="time-chip{{if .IsGood}} time-good{{end}}"
-       hx-get="{{basePath}}/departures?origin={{$.InterchangeCRS}}&date={{$.InterchangeDate}}&after={{.Time}}&legs={{$.PriorLegsParam}}&to={{$.DestCRS}}"
+       hx-get="{{basePath}}/leg/0?legs={{.UID}}|{{.Date}}|{{$.InterchangeCRS}}|{{$.DestCRS}}"
        hx-target="#interchange-deps-{{$.N}}"
        hx-swap="innerHTML"
-       hx-push-url="false"
-       {{if .AutoLoad}}hx-trigger="load"{{end}}>{{.Time}}</a>{{end}}{{end}}
+       hx-push-url="false">{{.Time}}</a>{{end}}{{end}}
   </div>
   {{end}}
 </div>

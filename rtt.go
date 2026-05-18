@@ -13,7 +13,10 @@ import (
 )
 
 
-const cacheTTL = 25 * time.Second
+const (
+	cacheTTL           = 60 * time.Second
+	minRequestInterval = 2 * time.Second
+)
 
 type RTTClient struct {
 	dataURL      string
@@ -26,6 +29,9 @@ type RTTClient struct {
 
 	mu    sync.Mutex
 	cache map[string]cacheEntry
+
+	rateMu    sync.Mutex
+	lastFetch time.Time
 }
 
 type cacheEntry struct {
@@ -106,6 +112,13 @@ func (c *RTTClient) get(path string) ([]byte, error) {
 		return e.body, nil
 	}
 	c.mu.Unlock()
+
+	c.rateMu.Lock()
+	if wait := minRequestInterval - time.Since(c.lastFetch); wait > 0 {
+		time.Sleep(wait)
+	}
+	c.lastFetch = time.Now()
+	c.rateMu.Unlock()
 
 	token, err := c.bearerToken()
 	if err != nil {

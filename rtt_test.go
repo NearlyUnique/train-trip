@@ -2,8 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -240,6 +242,38 @@ func TestRTTClient_InvalidServiceJSON(t *testing.T) {
 	client := NewRTTClient(ts.URL, "ref", false)
 	_, err := client.GetService("A1", "20260511")
 	assert.Error(t, err)
+}
+
+func TestRTTClient_RateLimit(t *testing.T) {
+	var callTimes []time.Time
+	var mu sync.Mutex
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/get_access_token" {
+			json.NewEncoder(w).Encode(accessTokenResponse{
+				Token: "tok", ValidUntil: time.Now().Add(10 * time.Minute).Format(time.RFC3339),
+			})
+			return
+		}
+		mu.Lock()
+		callTimes = append(callTimes, time.Now())
+		mu.Unlock()
+		json.NewEncoder(w).Encode(SearchResponse{})
+	}))
+	defer ts.Close()
+
+	client := NewRTTClient(ts.URL, "test-refresh", false)
+	for i := 0; i < 3; i++ {
+		_, err := client.SearchDepartures(fmt.Sprintf("S%02d", i), "20260511", "0900", "")
+		require.NoError(t, err)
+	}
+
+	require.Len(t, callTimes, 3)
+	const jitter = 10 * time.Millisecond
+	for i := 1; i < len(callTimes); i++ {
+		gap := callTimes[i].Sub(callTimes[i-1])
+		assert.GreaterOrEqual(t, gap+jitter, minRequestInterval, "API calls %d and %d too close (%v)", i-1, i, gap)
+	}
 }
 
 func TestRTTClient_APIError(t *testing.T) {

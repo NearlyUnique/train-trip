@@ -721,6 +721,44 @@ func TestNextDeparturesAfter_ExcludesBookedTrain(t *testing.T) {
 	assert.Equal(t, "on-time", deps[0].Status)
 }
 
+// TestFilterDeps_LongCodeMatching verifies that filterDeps uses the RTT longCode
+// (not the CRS shortCode) to match destinations, because the search response
+// destination locations only carry longCodes (e.g. "MNCRPIC"), never shortCodes.
+func TestFilterDeps_LongCodeMatching(t *testing.T) {
+	manTrain := Service{
+		ScheduleMeta: ServiceScheduleMeta{
+			InPassengerService:     true,
+			Identity:               "W34203",
+			DepartureDate:          "2026-05-18",
+			TrainReportingIdentity: "1H31",
+		},
+		TemporalData: ServiceTemporalData{
+			DisplayAs: "CALL",
+			Departure: &TemporalPoint{ScheduleAdvertised: iso("1710"), RealtimeForecast: iso("1710")},
+		},
+		Destination: []StationStop{
+			{Location: StopLocation{LongCodes: []string{"MNCRPIC"}}}, // no shortCodes — matches real API shape
+		},
+	}
+	euston := Service{
+		ScheduleMeta: ServiceScheduleMeta{InPassengerService: true},
+		TemporalData: ServiceTemporalData{
+			DisplayAs: "CALL",
+			Departure: &TemporalPoint{ScheduleAdvertised: iso("1611"), RealtimeForecast: iso("1611")},
+		},
+		Destination: []StationStop{
+			{Location: StopLocation{LongCodes: []string{"EUSTON"}}},
+		},
+	}
+	sr := &SearchResponse{Services: []Service{manTrain, euston}}
+	deps := filterDeps(sr, "1610", "MAN", "MNCRPIC", hhmm2mins("1608"))
+	require.Len(t, deps, 1, "only the MAN-bound train should pass")
+	assert.Equal(t, "17:10", deps[0].Time)
+	assert.Equal(t, "W34203", deps[0].UID)
+	assert.Equal(t, "20260518", deps[0].Date)
+	assert.True(t, deps[0].IsGood) // 62 min buffer ≥ 10
+}
+
 func TestNextDeparturesAfter_RequeriesWhenNoAltInFirstWindow(t *testing.T) {
 	calls := 0
 	mock := &rttAPIMock{
@@ -986,12 +1024,22 @@ func TestIsDestCancelled(t *testing.T) {
 	}}
 	assert.True(t, isDestCancelled(byArrFlag, "MIA"))
 
-	// TERMINATES stop is still reachable — not cancelled as a destination
+	// TERMINATES with no cancelled departure = scheduled terminus, not cancelled
 	terminates := &ServiceResponse{Locations: []ServiceLocation{
 		{Location: StopLocation{ShortCodes: []string{"MCO"}},
 			TemporalData: ServiceTemporalData{DisplayAs: "TERMINATES"}},
 	}}
 	assert.False(t, isDestCancelled(terminates, "MCO"))
+
+	// TERMINATES with cancelled departure = train short-formed here, treat as cancelled
+	shortFormed := &ServiceResponse{Locations: []ServiceLocation{
+		{Location: StopLocation{ShortCodes: []string{"MCO"}},
+			TemporalData: ServiceTemporalData{
+				DisplayAs: "TERMINATES",
+				Departure: &TemporalPoint{IsCancelled: true},
+			}},
+	}}
+	assert.True(t, isDestCancelled(shortFormed, "MCO"))
 }
 
 func TestCancelReason_APIText(t *testing.T) {
@@ -1026,8 +1074,12 @@ func buildTerminatesService() *ServiceResponse {
 				TemporalData: ServiceTemporalData{DisplayAs: "CALL", Departure: &TemporalPoint{ScheduleAdvertised: iso("1830"), RealtimeActual: iso("1927")}},
 			},
 			{
-				Location:     StopLocation{ShortCodes: []string{"MCO"}},
-				TemporalData: ServiceTemporalData{DisplayAs: "TERMINATES", Arrival: &TemporalPoint{ScheduleAdvertised: iso("1926"), RealtimeActual: iso("2031")}},
+				Location: StopLocation{ShortCodes: []string{"MCO"}},
+				TemporalData: ServiceTemporalData{
+					DisplayAs: "TERMINATES",
+					Arrival:   &TemporalPoint{ScheduleAdvertised: iso("1926"), RealtimeActual: iso("2031")},
+					Departure: &TemporalPoint{ScheduleAdvertised: iso("1927"), IsCancelled: true},
+				},
 			},
 			{
 				Location: StopLocation{ShortCodes: []string{"MIA"}},
@@ -1051,6 +1103,24 @@ func TestBuildLegCards_DestCancelled(t *testing.T) {
 	srv := newTestServer(t, mock)
 	// Leg to Manchester Airport — service terminated early at Oxford Road
 	legs := []Leg{{UID: "G90090", Date: "20260517", Origin: "LIV", Dest: "MIA"}}
+	cards := srv.buildLegCards(legs, encodeLegs(legs))
+	require.Len(t, cards, 1)
+	assert.Equal(t, "cancelled", cards[0].Status)
+	assert.Equal(t, "a points failure", cards[0].CancelReason)
+}
+
+func TestBuildLegCards_ShortFormedAtDest(t *testing.T) {
+	mock := &rttAPIMock{
+		GetServiceFunc: func(uid, date string) (*ServiceResponse, error) {
+			return buildTerminatesService(), nil
+		},
+		SearchDeparturesFunc: func(crs, date, fromTime, to string) (*SearchResponse, error) {
+			return &SearchResponse{}, nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	// Leg terminates exactly at the short-formed stop — should be cancelled, not delayed
+	legs := []Leg{{UID: "G90090", Date: "20260517", Origin: "LIV", Dest: "MCO"}}
 	cards := srv.buildLegCards(legs, encodeLegs(legs))
 	require.Len(t, cards, 1)
 	assert.Equal(t, "cancelled", cards[0].Status)

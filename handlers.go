@@ -145,6 +145,8 @@ type JourneyPage struct {
 
 // NextDep is an alternative departure time for a tight-connection leg.
 type NextDep struct {
+	UID      string // service UID, for leg card rendering
+	Date     string // YYYYMMDD run date
 	Time     string // HH:MM
 	IsGood   bool   // true if ≥10 min buffer from interchange arrival
 	AutoLoad bool   // auto-trigger HTMX fetch on page render
@@ -152,34 +154,34 @@ type NextDep struct {
 }
 
 type LegCard struct {
-	N               int
-	LegsParam       string
-	UID             string
-	Date            string
-	TrainID         string
-	Operator        string
-	OriginName      string
-	DestName        string
-	DestCRS         string // CRS code of destination, for departure filtering
-	DepBooked       string
-	DepRealtime     string
-	ArrBooked       string
-	ArrRealtime     string
-	Platform        string
-	DelayMins       int
-	Status          string // "on-time" | "delayed" | "cancelled" | "missed"
-	CancelReason    string // human-readable cancellation reason, if known
-	Completed       bool   // true when arrival time has passed
-	TightConnection bool   // true when gap from prior leg is ≤ 10 min
-	ConnectionMins  int    // minutes available for the connection
-	NextDeps        []NextDep // alternative departures from interchange
-	InterchangeCRS  string // CRS of interchange station (origin of this leg)
-	InterchangeDate string
+	N                int
+	LegsParam        string
+	UID              string
+	Date             string
+	TrainID          string
+	Operator         string
+	OriginName       string
+	DestName         string
+	DestCRS          string // CRS code of destination, for departure filtering
+	DepBooked        string
+	DepRealtime      string
+	ArrBooked        string
+	ArrRealtime      string
+	Platform         string
+	DelayMins        int
+	Status           string // "on-time" | "delayed" | "cancelled" | "missed"
+	CancelReason     string // human-readable cancellation reason, if known
+	Completed        bool   // true when arrival time has passed
+	TightConnection  bool      // true when gap from prior leg is ≤ 10 min
+	ConnectionMins   int       // minutes available for the connection
+	NextDeps         []NextDep // alternative departures from interchange
+	InterchangeCRS   string    // CRS of interchange station (origin of this leg)
+	InterchangeDate  string
 	InterchangeAfter string // HHMM arrival of prior leg at interchange
-	PriorLegsParam  string // encoded legs before this one, for departure navigation
-	DestLongCode    string // NLC/STANOX long code for dest, for departure filtering
-	DestPlatform    string
-	InTransit       InTransitInfo
+	PriorLegsParam   string // encoded legs before this one, for departure navigation
+	DestLongCode     string // RTT longCode for dest, for departure filtering
+	DestPlatform     string
+	InTransit        InTransitInfo
 }
 
 type InTransitInfo struct {
@@ -533,12 +535,35 @@ func filterDeps(sr *SearchResponse, skipHHMM, destCRS, destLongCode string, arrM
 		}
 		buffer := hhmm2mins(dep) - arrMins
 		deps = append(deps, NextDep{
+			UID:    svc.ScheduleMeta.Identity,
+			Date:   runDateToYMD(svc.ScheduleMeta.DepartureDate),
 			Time:   fmtTime(dep),
 			IsGood: buffer >= 10 && status == "on-time",
 			Status: status,
 		})
 	}
 	return deps
+}
+
+// serviceCallsAt reports whether svc's final destination matches destCRS (via shortCodes)
+// or destLongCode (via longCodes). The RTT search response omits shortCodes from destination
+// locations, so longCode matching is the primary path for real API data.
+func serviceCallsAt(svc Service, destCRS, destLongCode string) bool {
+	for _, stop := range svc.Destination {
+		for _, code := range stop.Location.ShortCodes {
+			if code == destCRS {
+				return true
+			}
+		}
+		if destLongCode != "" {
+			for _, code := range stop.Location.LongCodes {
+				if code == destLongCode {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // depStatus returns the departure HHMM and status ("on-time" or "cancelled")
@@ -572,24 +597,6 @@ func effectiveDep(td ServiceTemporalData) string {
 	return isoToHHMM(td.Departure.ScheduleAdvertised)
 }
 
-// serviceCallsAt reports whether any of svc's destinations match destCRS.
-func serviceCallsAt(svc Service, destCRS, destLongCode string) bool {
-	for _, stop := range svc.Destination {
-		for _, code := range stop.Location.ShortCodes {
-			if code == destCRS {
-				return true
-			}
-		}
-		if destLongCode != "" {
-			for _, code := range stop.Location.LongCodes {
-				if code == destLongCode {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
 
 func (c *LegCard) isActualDep(svc *ServiceResponse, crs string) bool {
 	for _, loc := range svc.Locations {
@@ -626,7 +633,9 @@ func isDestCancelled(svc *ServiceResponse, crs string) bool {
 		if loc.CRS() == crs {
 			return loc.TemporalData.DisplayAs == "CANCELLED" ||
 				loc.TemporalData.DisplayAs == "CANCELLED_CALL" ||
-				(loc.TemporalData.Arrival != nil && loc.TemporalData.Arrival.IsCancelled)
+				(loc.TemporalData.Arrival != nil && loc.TemporalData.Arrival.IsCancelled) ||
+				// Train terminated early here: departure is cancelled but arrival was not (short-forming)
+				(loc.TemporalData.DisplayAs == "TERMINATES" && loc.TemporalData.Departure != nil && loc.TemporalData.Departure.IsCancelled)
 		}
 	}
 	return false
