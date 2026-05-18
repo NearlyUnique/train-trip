@@ -14,7 +14,7 @@ import (
 
 
 const (
-	cacheTTL           = 60 * time.Second
+	cacheTTL           = 5 * time.Minute
 	minRequestInterval = 2 * time.Second
 )
 

@@ -1,6 +1,6 @@
 BINARY      := build/train_trip
 BINARY_ARM  := build/train_trip_arm6
-PI_HOST     := pi
+PI_HOST     := pi_tailscale
 PI_DIR      := /home/pi/train_trip
 PORT        := 8083
 

@@ -2,7 +2,7 @@
 <div class="leg-card status-{{.Status}}"
      id="leg-{{.N}}"
      hx-get="{{basePath}}/leg/{{.N}}?legs={{.LegsParam}}"
-     hx-trigger="every 30s"
+     hx-trigger="every 5m"
      hx-swap="outerHTML">
 
   <div class="leg-route">
