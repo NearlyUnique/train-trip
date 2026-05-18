@@ -497,28 +497,36 @@ func (s *server) annotateMissedLegs(cards []LegCard, legs []Leg, nowHHMM string)
 	}
 }
 
-// nextDeparturesAfter returns alternative departures from crs after arrHHMM,
-// nextDeparturesAfter returns all departures from crs toward destCRS returned
-// by RTT, skipping only non-passenger services and trains not calling at the
-// destination. Cancelled trains are included with Status="cancelled"; trains
-// that departed before skipHHMM get Status="departed".
+// nextDeparturesAfter returns alternative departures from crs after arrHHMM toward destCRS.
+// Cancelled trains are included with Status="cancelled"; trains that departed before skipHHMM
+// get Status="departed". If the initial window contains no alternatives (e.g. the booked train
+// was the only match), a second query from skipHHMM finds the next available train.
 func (s *server) nextDeparturesAfter(crs, date, arrHHMM, skipHHMM, destCRS, destLongCode string) []NextDep {
 	sr, err := s.rtt.SearchDepartures(crs, date, arrHHMM, destCRS)
 	if err != nil {
 		return nil
 	}
 	arrMins := hhmm2mins(arrHHMM)
+	deps := filterDeps(sr, skipHHMM, destCRS, destLongCode, arrMins)
+	if len(deps) == 0 && skipHHMM != "" {
+		// Initial window had no alternatives — re-query from the booked departure to find the next train.
+		sr2, err := s.rtt.SearchDepartures(crs, date, skipHHMM, destCRS)
+		if err == nil {
+			deps = filterDeps(sr2, skipHHMM, destCRS, destLongCode, arrMins)
+		}
+	}
+	return deps
+}
+
+func filterDeps(sr *SearchResponse, skipHHMM, destCRS, destLongCode string, arrMins int) []NextDep {
 	var deps []NextDep
 	for _, svc := range sr.Services {
 		if !svc.ScheduleMeta.InPassengerService || !serviceCallsAt(svc, destCRS, destLongCode) {
 			continue
 		}
 		dep, status := depStatus(svc.TemporalData)
-		if dep == "" {
+		if dep == "" || dep == skipHHMM {
 			continue
-		}
-		if dep == skipHHMM {
-			continue // this is the booked connecting train, not an alternative
 		}
 		if status != "cancelled" && dep < skipHHMM {
 			status = "departed"

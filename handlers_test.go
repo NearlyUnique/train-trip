@@ -721,6 +721,32 @@ func TestNextDeparturesAfter_ExcludesBookedTrain(t *testing.T) {
 	assert.Equal(t, "on-time", deps[0].Status)
 }
 
+func TestNextDeparturesAfter_RequeriesWhenNoAltInFirstWindow(t *testing.T) {
+	calls := 0
+	mock := &rttAPIMock{
+		SearchDeparturesFunc: func(crs, date, fromTime, to string) (*SearchResponse, error) {
+			calls++
+			if calls == 1 {
+				// First window: only the booked train goes to MAN
+				return &SearchResponse{Services: []Service{
+					passengerDep("BOOKED", "1610", "MAN"),
+				}}, nil
+			}
+			// Second window (from skipHHMM): next NUN→MAN train appears
+			return &SearchResponse{Services: []Service{
+				passengerDep("BOOKED", "1610", "MAN"),
+				passengerDep("NEXT", "1740", "MAN"),
+			}}, nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	deps := srv.nextDeparturesAfter("NUN", "20260518", "1608", "1610", "MAN", "")
+	assert.Equal(t, 2, calls)
+	require.Len(t, deps, 1)
+	assert.Equal(t, "17:40", deps[0].Time)
+	assert.True(t, deps[0].IsGood)
+}
+
 // --- direct helper tests ---
 
 func TestIsActualDep(t *testing.T) {
