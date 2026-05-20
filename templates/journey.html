@@ -39,6 +39,19 @@
           <input id="continue-origin" name="origin" type="hidden">
           <ul class="ac-list" id="continue-ac-list" hidden></ul>
         </div>
+        <label for="continue-dest-input">To <span class="label-optional">(optional)</span></label>
+        <div class="ac-wrap">
+          <input id="continue-dest-input" class="ac-input" type="text"
+                 role="combobox"
+                 placeholder="e.g. Edinburgh or EDB"
+                 autocomplete="off"
+                 aria-autocomplete="list"
+                 aria-controls="continue-dest-ac-list"
+                 aria-expanded="false"
+                 aria-haspopup="listbox">
+          <input id="continue-dest" name="to" type="hidden">
+          <ul class="ac-list" id="continue-dest-ac-list" hidden></ul>
+        </div>
         <label for="continue-date">Date</label>
         <input id="continue-date" name="date" type="date" placeholder="today"{{if .ContinueDate}} value="{{.ContinueDate}}"{{end}}>
         <label for="continue-time">Time</label>
@@ -49,7 +62,10 @@
     </details>
   </main>
   <script src="{{basePath}}/static/autocomplete.js"></script>
-  <script>initAutocomplete({{stationsJSON .Stations}}, 'continue-origin-input', 'continue-origin', 'continue-ac-list', 'continue-form');</script>
+  <script>
+    initAutocomplete({{stationsJSON .Stations}}, 'continue-origin-input', 'continue-origin', 'continue-ac-list', 'continue-form');
+    initAutocomplete({{stationsJSON .Stations}}, 'continue-dest-input', 'continue-dest', 'continue-dest-ac-list', 'continue-form', false);
+  </script>
 </body>
 </html>
 {{end}}
