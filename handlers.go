@@ -140,7 +140,9 @@ type CallPoint struct {
 }
 
 type JourneyPage struct {
-	Legs []LegCard
+	Legs      []LegCard
+	LegsParam string
+	Stations  []Station
 }
 
 // NextDep is an alternative departure time for a tight-connection leg.
@@ -356,7 +358,7 @@ func (s *server) handleJourney(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cards := s.buildLegCards(legs, legsParam)
-	s.render(w, "journey.html", JourneyPage{Legs: cards})
+	s.render(w, "journey.html", JourneyPage{Legs: cards, LegsParam: legsParam, Stations: stations})
 }
 
 // GET /leg/{n}?legs=...

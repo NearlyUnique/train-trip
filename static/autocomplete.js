@@ -17,11 +17,11 @@ function buildResults(stations, raw) {
   return [...crsHits, ...nameHits].slice(0, 10);
 }
 
-function initAutocomplete(stations) {
-  const searchInput = document.getElementById('origin-input');
-  const hiddenInput = document.getElementById('origin');
-  const list        = document.getElementById('ac-list');
-  const form        = document.getElementById('search-form');
+function initAutocomplete(stations, inputId = 'origin-input', hiddenId = 'origin', listId = 'ac-list', formId = 'search-form') {
+  const searchInput = document.getElementById(inputId);
+  const hiddenInput = document.getElementById(hiddenId);
+  const list        = document.getElementById(listId);
+  const form        = document.getElementById(formId);
 
   let activeIdx = -1;
 

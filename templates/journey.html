@@ -18,7 +18,38 @@
     {{template "leg.html" .}}
     <div id="interchange-deps-{{.N}}"></div>
     {{end}}
+    <details class="continue-journey">
+      <summary class="btn btn-continue">+ Continue journey</summary>
+      <form class="search-form" id="continue-form"
+            hx-get="{{basePath}}/departures"
+            hx-target="#continue-results"
+            hx-swap="innerHTML"
+            hx-push-url="false">
+        <input type="hidden" name="legs" value="{{.LegsParam}}">
+        <label for="continue-origin-input">From</label>
+        <div class="ac-wrap">
+          <input id="continue-origin-input" class="ac-input" type="text"
+                 role="combobox"
+                 placeholder="e.g. St Pancras or STP"
+                 autocomplete="off"
+                 aria-autocomplete="list"
+                 aria-controls="continue-ac-list"
+                 aria-expanded="false"
+                 aria-haspopup="listbox">
+          <input id="continue-origin" name="origin" type="hidden">
+          <ul class="ac-list" id="continue-ac-list" hidden></ul>
+        </div>
+        <label for="continue-date">Date</label>
+        <input id="continue-date" name="date" type="date" placeholder="today">
+        <label for="continue-time">Time</label>
+        <input id="continue-time" name="time" type="time" placeholder="now">
+        <button type="submit">Find trains</button>
+      </form>
+      <div id="continue-results"></div>
+    </details>
   </main>
+  <script src="{{basePath}}/static/autocomplete.js"></script>
+  <script>initAutocomplete({{stationsJSON .Stations}}, 'continue-origin-input', 'continue-origin', 'continue-ac-list', 'continue-form');</script>
 </body>
 </html>
 {{end}}

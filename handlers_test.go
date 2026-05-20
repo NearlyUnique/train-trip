@@ -415,6 +415,8 @@ func TestHandleJourney_Valid(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), "Sheffield")
 	assert.Contains(t, w.Body.String(), "Manchester")
+	assert.Contains(t, w.Body.String(), "Continue journey")
+	assert.Contains(t, w.Body.String(), "A1|20260511|SHF|MAN")
 }
 
 // --- handleLeg ---
