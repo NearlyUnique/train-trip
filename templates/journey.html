@@ -40,9 +40,9 @@
           <ul class="ac-list" id="continue-ac-list" hidden></ul>
         </div>
         <label for="continue-date">Date</label>
-        <input id="continue-date" name="date" type="date" placeholder="today">
+        <input id="continue-date" name="date" type="date" placeholder="today"{{if .ContinueDate}} value="{{.ContinueDate}}"{{end}}>
         <label for="continue-time">Time</label>
-        <input id="continue-time" name="time" type="time" placeholder="now">
+        <input id="continue-time" name="time" type="time" placeholder="now"{{if .ContinueTime}} value="{{.ContinueTime}}"{{end}}>
         <button type="submit">Find trains</button>
       </form>
       <div id="continue-results"></div>

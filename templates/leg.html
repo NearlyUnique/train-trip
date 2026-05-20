@@ -16,6 +16,9 @@
     {{else if eq .Status "cancelled"}}<span class="status-badge badge-alert"><i class="ti ti-x" aria-hidden="true"></i> Cancelled</span>
     {{else if eq .Status "missed"}}<span class="status-badge badge-alert"><i class="ti ti-alert-triangle" aria-hidden="true"></i> Missed</span>
     {{else}}<span class="status-badge badge-muted"><i class="ti ti-alert-circle" aria-hidden="true"></i> Unavailable</span>{{end}}
+    <a class="btn-remove-leg"
+       href="{{if .RemoveLegsParam}}{{basePath}}/journey?legs={{.RemoveLegsParam}}{{else}}{{basePath}}/{{end}}"
+       title="Remove this leg" aria-label="Remove this leg">✕</a>
   </div>
 
   <!-- Route: 3-column spine layout -->

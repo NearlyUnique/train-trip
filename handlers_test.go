@@ -419,6 +419,59 @@ func TestHandleJourney_Valid(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "A1|20260511|SHF|MAN")
 }
 
+func TestHandleJourney_ContinuePrefill(t *testing.T) {
+	mock := &rttAPIMock{
+		GetServiceFunc: func(uid, date string) (*ServiceResponse, error) {
+			return testSvcResp("SHF", "MAN", "0900", "0900", "0945", "0950"), nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	r := httptest.NewRequest(http.MethodGet, "/journey?legs=A1|20260511|SHF|MAN", nil)
+	w := httptest.NewRecorder()
+	srv.handleJourney(w, r)
+	body := w.Body.String()
+	assert.Contains(t, body, `value="2026-05-11"`)
+	assert.Contains(t, body, `value="09:50"`)
+}
+
+func TestBuildLegCards_RemoveLegsParam(t *testing.T) {
+	mock := &rttAPIMock{
+		GetServiceFunc: func(uid, date string) (*ServiceResponse, error) {
+			return testSvcResp("SHF", "MAN", "0900", "0900", "0945", "0945"), nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	legs := []Leg{
+		{UID: "A1", Date: "20260511", Origin: "SHF", Dest: "MAN"},
+		{UID: "B2", Date: "20260511", Origin: "MAN", Dest: "LDS"},
+	}
+	cards := srv.buildLegCards(legs, encodeLegs(legs))
+	require.Len(t, cards, 2)
+	// removing first leg leaves second
+	assert.Equal(t, "B2|20260511|MAN|LDS", cards[0].RemoveLegsParam)
+	// removing last leg leaves first
+	assert.Equal(t, "A1|20260511|SHF|MAN", cards[1].RemoveLegsParam)
+}
+
+func TestBuildLegCards_RemoveLegsParam_Single(t *testing.T) {
+	mock := &rttAPIMock{
+		GetServiceFunc: func(uid, date string) (*ServiceResponse, error) {
+			return testSvcResp("SHF", "MAN", "0900", "0900", "0945", "0945"), nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	legs := []Leg{{UID: "A1", Date: "20260511", Origin: "SHF", Dest: "MAN"}}
+	cards := srv.buildLegCards(legs, encodeLegs(legs))
+	require.Len(t, cards, 1)
+	assert.Equal(t, "", cards[0].RemoveLegsParam) // empty → link goes to /
+}
+
+func TestYyyymmddToDash(t *testing.T) {
+	assert.Equal(t, "2026-05-11", yyyymmddToDash("20260511"))
+	assert.Equal(t, "2026-05-11", yyyymmddToDash("2026-05-11")) // pass-through if wrong length
+	assert.Equal(t, "", yyyymmddToDash(""))
+}
+
 // --- handleLeg ---
 
 func TestHandleLeg_InvalidIndex(t *testing.T) {

@@ -17,7 +17,7 @@ function buildResults(stations, raw) {
   return [...crsHits, ...nameHits].slice(0, 10);
 }
 
-function initAutocomplete(stations, inputId = 'origin-input', hiddenId = 'origin', listId = 'ac-list', formId = 'search-form') {
+function initAutocomplete(stations, inputId = 'origin-input', hiddenId = 'origin', listId = 'ac-list', formId = 'search-form', required = true) {
   const searchInput = document.getElementById(inputId);
   const hiddenInput = document.getElementById(hiddenId);
   const list        = document.getElementById(listId);
@@ -97,7 +97,7 @@ function initAutocomplete(stations, inputId = 'origin-input', hiddenId = 'origin
   searchInput.addEventListener('blur', () => setTimeout(closeList, 150));
 
   form.addEventListener('submit', e => {
-    if (!hiddenInput.value) {
+    if (required && searchInput.value && !hiddenInput.value) {
       e.preventDefault();
       searchInput.setCustomValidity('Select a station from the list');
       searchInput.reportValidity();

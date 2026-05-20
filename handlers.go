@@ -140,9 +140,11 @@ type CallPoint struct {
 }
 
 type JourneyPage struct {
-	Legs      []LegCard
-	LegsParam string
-	Stations  []Station
+	Legs         []LegCard
+	LegsParam    string
+	Stations     []Station
+	ContinueDate string // YYYY-MM-DD, pre-filled from last leg arrival
+	ContinueTime string // HH:MM, pre-filled from last leg arrival
 }
 
 // NextDep is an alternative departure time for a tight-connection leg.
@@ -177,6 +179,7 @@ type LegCard struct {
 	TightConnection  bool      // true when gap from prior leg is ≤ 10 min
 	ConnectionMins   int       // minutes available for the connection
 	NextDeps         []NextDep // alternative departures from interchange
+	RemoveLegsParam  string    // encoded legs without this one, empty if last leg
 	InterchangeCRS   string    // CRS of interchange station (origin of this leg)
 	InterchangeDate  string
 	InterchangeAfter string // HHMM arrival of prior leg at interchange
@@ -203,6 +206,60 @@ type InTransitInfo struct {
 // GET /
 func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "base.html", SearchPage{Stations: stations})
+}
+
+func serviceToRow(svc Service, minTime, toName string) (ServiceRow, bool) {
+	if !svc.ScheduleMeta.InPassengerService {
+		return ServiceRow{}, false
+	}
+	td := svc.TemporalData
+	if td.DisplayAs == "CANCELLED_CALL" || td.Departure == nil || td.Departure.IsCancelled {
+		return ServiceRow{}, false
+	}
+	booked := isoToHHMM(td.Departure.ScheduleAdvertised)
+	dep := isoToHHMM(td.Departure.RealtimeForecast)
+	if dep == "" {
+		dep = booked
+	}
+	if dep < minTime {
+		return ServiceRow{}, false
+	}
+	destName := ""
+	if len(svc.Destination) > 0 {
+		destName = svc.Destination[0].Location.Description
+	}
+	if toName != "" && strings.ToLower(destName) != toName {
+		return ServiceRow{}, false
+	}
+	delay := delayMins(booked, dep)
+	return ServiceRow{
+		UID:       svc.ScheduleMeta.Identity,
+		Date:      runDateToYMD(svc.ScheduleMeta.DepartureDate),
+		TrainID:   svc.ScheduleMeta.TrainReportingIdentity,
+		Operator:  svc.ScheduleMeta.Operator.Name,
+		DestName:  destName,
+		Platform:  svc.LocationMeta.Platform.Planned,
+		Booked:    fmtTime(booked),
+		Realtime:  fmtTime(dep),
+		DelayMins: delay,
+		Status:    statusLabel(td.DisplayAs, delay),
+	}, true
+}
+
+func buildServiceRows(services []Service, minTime, to string) []ServiceRow {
+	toName := strings.ToLower(stationName(to)) // "" when no dest filter
+	rows := make([]ServiceRow, 0, 10)
+	for _, svc := range services {
+		row, ok := serviceToRow(svc, minTime, toName)
+		if !ok {
+			continue
+		}
+		rows = append(rows, row)
+		if len(rows) >= 8 {
+			break
+		}
+	}
+	return rows
 }
 
 // GET /departures?origin=SHF&date=20260510&time=0900&after=0945&legs=...
@@ -241,46 +298,7 @@ func (s *server) handleDepartures(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows := make([]ServiceRow, 0, 10)
-	for _, svc := range sr.Services {
-		if !svc.ScheduleMeta.InPassengerService {
-			continue
-		}
-		td := svc.TemporalData
-		if td.DisplayAs == "CANCELLED_CALL" || td.Departure == nil || td.Departure.IsCancelled {
-			continue
-		}
-		booked := isoToHHMM(td.Departure.ScheduleAdvertised)
-		dep := isoToHHMM(td.Departure.RealtimeForecast)
-		if dep == "" {
-			dep = booked
-		}
-		if dep < minTime {
-			continue
-		}
-		delay := delayMins(booked, dep)
-		status := statusLabel(td.DisplayAs, delay)
-		destName := ""
-		if len(svc.Destination) > 0 {
-			destName = svc.Destination[0].Location.Description
-		}
-		runDate := runDateToYMD(svc.ScheduleMeta.DepartureDate)
-		rows = append(rows, ServiceRow{
-			UID:       svc.ScheduleMeta.Identity,
-			Date:      runDate,
-			TrainID:   svc.ScheduleMeta.TrainReportingIdentity,
-			Operator:  svc.ScheduleMeta.Operator.Name,
-			DestName:  destName,
-			Platform:  svc.LocationMeta.Platform.Planned,
-			Booked:    fmtTime(booked),
-			Realtime:  fmtTime(dep),
-			DelayMins: delay,
-			Status:    status,
-		})
-		if len(rows) >= 8 {
-			break
-		}
-	}
+	rows := buildServiceRows(sr.Services, minTime, to)
 
 	s.render(w, "departures.html", DeparturesFragment{
 		Origin:     origin,
@@ -349,6 +367,14 @@ func (s *server) handleCallingPoints(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// yyyymmddToDash converts "20260511" to "2026-05-11" for HTML date inputs.
+func yyyymmddToDash(s string) string {
+	if len(s) == 8 {
+		return s[:4] + "-" + s[4:6] + "-" + s[6:]
+	}
+	return s
+}
+
 // GET /journey?legs=uid|date|origin|dest,...
 func (s *server) handleJourney(w http.ResponseWriter, r *http.Request) {
 	legsParam := r.URL.Query().Get("legs")
@@ -358,7 +384,12 @@ func (s *server) handleJourney(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cards := s.buildLegCards(legs, legsParam)
-	s.render(w, "journey.html", JourneyPage{Legs: cards, LegsParam: legsParam, Stations: stations})
+	page := JourneyPage{Legs: cards, LegsParam: legsParam, Stations: stations}
+	if last := cards[len(cards)-1]; last.ArrRealtime != "" {
+		page.ContinueDate = yyyymmddToDash(legs[len(legs)-1].Date)
+		page.ContinueTime = last.ArrRealtime
+	}
+	s.render(w, "journey.html", page)
 }
 
 // GET /leg/{n}?legs=...
@@ -450,6 +481,13 @@ func (s *server) buildLegCards(legs []Leg, legsParam string) []LegCard {
 		}
 
 		cards[i] = card
+	}
+
+	for i := range cards {
+		other := make([]Leg, 0, len(legs)-1)
+		other = append(other, legs[:i]...)
+		other = append(other, legs[i+1:]...)
+		cards[i].RemoveLegsParam = encodeLegs(other)
 	}
 
 	s.annotateTightConnections(cards, legs)

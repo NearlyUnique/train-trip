@@ -103,6 +103,27 @@ func TestRTTClient_SearchDepartures(t *testing.T) {
 	assert.NotNil(t, sr)
 }
 
+func TestRTTClient_SearchDepartures_ToQueryParam(t *testing.T) {
+	var gotQuery string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/get_access_token" {
+			json.NewEncoder(w).Encode(accessTokenResponse{
+				Token: "tok", ValidUntil: time.Now().Add(10 * time.Minute).Format(time.RFC3339),
+			})
+			return
+		}
+		gotQuery = r.URL.Query().Get("to")
+		json.NewEncoder(w).Encode(SearchResponse{})
+	}))
+	defer ts.Close()
+
+	client := NewRTTClient(ts.URL, "ref", false)
+	_, err := client.SearchDepartures("SHF", "20260511", "0900", "MAN")
+	require.NoError(t, err)
+	assert.Equal(t, "MAN", gotQuery)
+}
+
 func TestRTTClient_GetService(t *testing.T) {
 	ts := newRTTTestServer(t, nil)
 	defer ts.Close()

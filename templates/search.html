@@ -21,6 +21,20 @@
       <ul class="ac-list" id="ac-list" hidden></ul>
     </div>
 
+    <label for="dest-input">To <span class="label-optional">(optional)</span></label>
+    <div class="ac-wrap">
+      <input id="dest-input" class="ac-input" type="text"
+             role="combobox"
+             placeholder="e.g. Manchester or MAN"
+             autocomplete="off"
+             aria-autocomplete="list"
+             aria-controls="dest-ac-list"
+             aria-expanded="false"
+             aria-haspopup="listbox">
+      <input id="dest" name="to" type="hidden">
+      <ul class="ac-list" id="dest-ac-list" hidden></ul>
+    </div>
+
     <label for="date">Date</label>
     <input id="date" name="date" type="date"
            placeholder="today">
@@ -36,5 +50,8 @@
 </section>
 
 <script src="{{basePath}}/static/autocomplete.js"></script>
-<script>initAutocomplete({{stationsJSON .Stations}});</script>
+<script>
+  initAutocomplete({{stationsJSON .Stations}});
+  initAutocomplete({{stationsJSON .Stations}}, 'dest-input', 'dest', 'dest-ac-list', 'search-form', false);
+</script>
 {{end}}

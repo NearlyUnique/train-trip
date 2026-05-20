@@ -61,6 +61,7 @@ main { padding: 1rem 1.25rem; max-width: 680px; margin: 0 auto; }
   margin-bottom: 1.5rem;
 }
 .search-form label { font-weight: 500; white-space: nowrap; }
+.label-optional { font-weight: 400; font-size: 0.85em; color: var(--muted); }
 .search-form input {
   padding: 0.45rem 0.7rem;
   border: 1px solid var(--border);
@@ -174,6 +175,16 @@ main { padding: 1rem 1.25rem; max-width: 680px; margin: 0 auto; }
 .operator-row { display: flex; align-items: center; gap: 8px; }
 .operator-name { font-size: 14px; color: var(--muted); font-weight: 500; }
 .train-id-small { font-size: 13px; color: var(--muted); opacity: 0.7; }
+.btn-remove-leg {
+  margin-left: auto;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: none;
+  line-height: 1;
+}
+.btn-remove-leg:hover { background: var(--alert-bg); color: var(--alert); }
 
 /* Status badge (pill) — overrides the global display:none from .status-badge */
 .leg-card .status-badge {
