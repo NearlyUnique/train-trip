@@ -158,13 +158,16 @@ func (c *RTTClient) get(path string) ([]byte, error) {
 // SearchDepartures returns departures from a station.
 // fromTime is HHMM (e.g. "0900"); defaults to now if empty.
 //
-//	GET /gb-nr/location?code={crs}&timeFrom={ISO8601}[&to={crs}]
+//	GET /gb-nr/location?code={crs}&timeFrom={ISO8601}[&filterTo={crs}]
+//
+// filterTo: "Any short or long code, filters by trains subsequently calling at location"
+// Spec: https://realtimetrains.github.io/api-specification/specification/main.yml
 func (c *RTTClient) SearchDepartures(crs, date, fromTime, to string) (*SearchResponse, error) {
 	q := url.Values{}
 	q.Set("code", crs)
 	q.Set("timeFrom", ymdHHMMtoISO(date, fromTime))
 	if to != "" {
-		q.Set("to", to)
+		q.Set("filterTo", to)
 	}
 	body, err := c.get("/gb-nr/location?" + q.Encode())
 	if err != nil {

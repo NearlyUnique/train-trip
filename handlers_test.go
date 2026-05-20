@@ -260,6 +260,8 @@ func TestHandleDepartures_APIError(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.handleDepartures(w, r)
 	assert.Equal(t, http.StatusBadGateway, w.Code)
+	assert.Contains(t, w.Body.String(), "Could not load departures")
+	assert.Contains(t, w.Body.String(), `id="results"`)
 }
 
 func TestHandleDepartures_EmptyResults(t *testing.T) {
@@ -359,6 +361,8 @@ func TestHandleCallingPoints_APIError(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.handleCallingPoints(w, req)
 	assert.Equal(t, http.StatusBadGateway, w.Code)
+	assert.Contains(t, w.Body.String(), "Could not load service")
+	assert.Contains(t, w.Body.String(), `id="results"`)
 }
 
 func TestHandleCallingPoints(t *testing.T) {

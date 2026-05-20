@@ -113,7 +113,7 @@ func TestRTTClient_SearchDepartures_ToQueryParam(t *testing.T) {
 			})
 			return
 		}
-		gotQuery = r.URL.Query().Get("to")
+		gotQuery = r.URL.Query().Get("filterTo")
 		json.NewEncoder(w).Encode(SearchResponse{})
 	}))
 	defer ts.Close()

@@ -32,6 +32,14 @@ func (s *server) render(w http.ResponseWriter, name string, data any) {
 	}
 }
 
+func (s *server) renderError(w http.ResponseWriter, msg string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusBadGateway)
+	if err := s.tmpl.ExecuteTemplate(w, "error.html", msg); err != nil {
+		slog.Error("template error", "name", "error.html", "err", err)
+	}
+}
+
 func todayYMD() string {
 	return time.Now().Format("20060102")
 }
@@ -290,7 +298,7 @@ func (s *server) handleDepartures(w http.ResponseWriter, r *http.Request) {
 	sr, err := s.rtt.SearchDepartures(origin, date, minTime, to)
 	if err != nil {
 		slog.Error("departures fetch", "origin", origin, "err", err)
-		http.Error(w, "could not fetch departures", http.StatusBadGateway)
+		s.renderError(w, "Could not load departures — please try again.")
 		return
 	}
 
@@ -317,7 +325,7 @@ func (s *server) handleCallingPoints(w http.ResponseWriter, r *http.Request) {
 	svc, err := s.rtt.GetService(uid, date)
 	if err != nil {
 		slog.Error("service fetch", "uid", uid, "err", err)
-		http.Error(w, "could not fetch service", http.StatusBadGateway)
+		s.renderError(w, "Could not load service — please try again.")
 		return
 	}
 
