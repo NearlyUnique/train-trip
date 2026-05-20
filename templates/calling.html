@@ -24,10 +24,6 @@
         {{else}}
           {{$allLegs = $newLeg}}
         {{end}}
-        <a class="btn btn-dest"
-           href="{{basePath}}/journey?legs={{$allLegs}}">
-          Destination
-        </a>
         <button class="btn btn-change"
                 hx-get="{{basePath}}/departures?origin={{.CRS}}&after={{.Realtime}}&date={{$.Date}}&legs={{$allLegs}}"
                 hx-target="#results"
@@ -35,6 +31,10 @@
                 hx-push-url="false">
           Change here
         </button>
+        <a class="btn btn-dest"
+           href="{{basePath}}/journey?legs={{$allLegs}}">
+          Destination
+        </a>
       </div>
     </li>
     {{end}}
