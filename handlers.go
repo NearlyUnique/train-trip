@@ -208,7 +208,7 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "base.html", SearchPage{Stations: stations})
 }
 
-func serviceToRow(svc Service, minTime, toName string) (ServiceRow, bool) {
+func serviceToRow(svc Service, minTime string) (ServiceRow, bool) {
 	if !svc.ScheduleMeta.InPassengerService {
 		return ServiceRow{}, false
 	}
@@ -228,9 +228,6 @@ func serviceToRow(svc Service, minTime, toName string) (ServiceRow, bool) {
 	if len(svc.Destination) > 0 {
 		destName = svc.Destination[0].Location.Description
 	}
-	if toName != "" && strings.ToLower(destName) != toName {
-		return ServiceRow{}, false
-	}
 	delay := delayMins(booked, dep)
 	return ServiceRow{
 		UID:       svc.ScheduleMeta.Identity,
@@ -246,11 +243,10 @@ func serviceToRow(svc Service, minTime, toName string) (ServiceRow, bool) {
 	}, true
 }
 
-func buildServiceRows(services []Service, minTime, to string) []ServiceRow {
-	toName := strings.ToLower(stationName(to)) // "" when no dest filter
+func buildServiceRows(services []Service, minTime string) []ServiceRow {
 	rows := make([]ServiceRow, 0, 10)
 	for _, svc := range services {
-		row, ok := serviceToRow(svc, minTime, toName)
+		row, ok := serviceToRow(svc, minTime)
 		if !ok {
 			continue
 		}
@@ -298,7 +294,7 @@ func (s *server) handleDepartures(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows := buildServiceRows(sr.Services, minTime, to)
+	rows := buildServiceRows(sr.Services, minTime)
 
 	s.render(w, "departures.html", DeparturesFragment{
 		Origin:     origin,

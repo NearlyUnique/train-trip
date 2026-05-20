@@ -323,6 +323,28 @@ func TestHandleDepartures_ServiceFiltering(t *testing.T) {
 	assert.NotContains(t, body, "EARLY")
 }
 
+func TestHandleDepartures_ToFilter_CallsAt(t *testing.T) {
+	// A service terminating at Edinburgh should still appear when filtering for York,
+	// because RTT already filters by calling point — the Go layer must not re-filter by destination name.
+	services := []Service{
+		{ScheduleMeta: ServiceScheduleMeta{InPassengerService: true, TrainReportingIdentity: "THRU", Identity: "T1", DepartureDate: "2026-05-11"},
+			TemporalData: ServiceTemporalData{DisplayAs: "CALL", Departure: &TemporalPoint{ScheduleAdvertised: iso("0900"), RealtimeForecast: iso("0900")}},
+			Destination:  []StationStop{{Location: StopLocation{Description: "Edinburgh"}}}},
+	}
+	mock := &rttAPIMock{
+		SearchDeparturesFunc: func(crs, date, fromTime, to string) (*SearchResponse, error) {
+			return &SearchResponse{Services: services}, nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	r := httptest.NewRequest(http.MethodGet, "/departures?origin=SHF&date=20260511&time=0800&to=YRK", nil)
+	w := httptest.NewRecorder()
+	srv.handleDepartures(w, r)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "THRU")
+}
+
 // --- handleCallingPoints ---
 
 func TestHandleCallingPoints_APIError(t *testing.T) {
