@@ -25,7 +25,7 @@
       <div class="station-col">
         <div class="station-name">{{.OriginName}}</div>
         <div class="time-row">
-          <span class="time-planned {{if or (eq .Status "delayed") (eq .Status "cancelled") (eq .Status "missed")}}strikethrough{{end}}">{{.DepBooked}}</span>
+          <span class="time-planned {{if ne .DepBooked .DepRealtime}}strikethrough{{end}}">{{.DepBooked}}</span>
           {{if ne .DepBooked .DepRealtime}}
           <span class="time-actual {{if eq .Status "cancelled"}}cancelled{{end}}">
             {{- if eq .Status "cancelled"}}Cancelled{{else}}{{.DepRealtime}}{{if gt .DelayMins 0}} <em class="delay-badge">+{{.DelayMins}}m</em>{{end}}{{end -}}
@@ -47,7 +47,7 @@
         <div class="station-name">{{.DestName}}</div>
         {{if .ArrBooked}}
         <div class="time-row">
-          <span class="time-planned {{if or (eq .Status "delayed") (eq .Status "cancelled") (eq .Status "missed")}}strikethrough{{end}}">{{.ArrBooked}}</span>
+          <span class="time-planned {{if and .ArrRealtime (ne .ArrBooked .ArrRealtime)}}strikethrough{{end}}">{{.ArrBooked}}</span>
           {{if and .ArrRealtime (ne .ArrBooked .ArrRealtime)}}
           <span class="time-actual">{{.ArrRealtime}}</span>
           {{end}}
