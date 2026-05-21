@@ -9,7 +9,8 @@
   <div class="card-header">
     <div class="operator-row">
       <span class="operator-name">{{.Operator}}</span>
-      <span class="train-id-small">{{.TrainID}}</span>
+      {{if .FinalDest}}<span class="final-dest">to {{.FinalDest}}</span>{{end}}
+      {{if .TrainStatus}}<span class="train-status-badge">{{.TrainStatus}}</span>{{end}}
     </div>
     {{if eq .Status "on-time"}}<span class="status-badge badge-ok"><i class="ti ti-check" aria-hidden="true"></i> On time</span>
     {{else if eq .Status "delayed"}}<span class="status-badge badge-warn"><i class="ti ti-clock" aria-hidden="true"></i> {{.DelayMins}} min late</span>

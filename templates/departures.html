@@ -9,12 +9,11 @@
   <ul class="service-list">
     {{range .Services}}
     <li class="service-card status-{{.Status}}"
-        hx-get="{{basePath}}/calling-points/{{.UID}}/{{.Date}}?originCRS={{$.Origin}}&legs={{$.Legs}}"
+        hx-get="{{basePath}}/calling-points/{{.UID}}/{{.Date}}?originCRS={{$.Origin}}&legs={{$.Legs}}&to={{$.To}}"
         hx-target="#results"
         hx-swap="innerHTML"
         hx-push-url="false">
       <div class="service-header">
-        <span class="train-id">{{.TrainID}}</span>
         <span class="operator">{{.Operator}}</span>
         <span class="dest">to {{.DestName}}</span>
       </div>
@@ -23,7 +22,9 @@
         {{if ne .Booked .Realtime}}
         <span class="time-real delay">{{.Realtime}} <em>(+{{.DelayMins}}m)</em></span>
         {{end}}
-        {{if .Platform}}<span class="platform">Plat {{.Platform}}</span>{{end}}
+        {{if .ArrBooked}}<span class="arr-time">arr {{.ArrBooked}}</span>{{end}}
+        {{if .TrainStatus}}<span class="train-status-badge">{{.TrainStatus}}</span>{{end}}
+        {{if .Platform}}<span class="platform">{{.Platform}}</span>{{end}}
       </div>
       <span class="status-badge">{{.Status}}</span>
     </li>

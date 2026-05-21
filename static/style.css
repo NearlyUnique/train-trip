@@ -12,7 +12,7 @@
   --ok:     var(--uchu-green-5);
   --warn:   var(--uchu-yellow-5);
   --alert:  var(--uchu-red-5);
-  /* dark amber — passes 4.5:1 on bg/bg2 for delayed time text */
+  /* dark amber - passes 4.5:1 on bg/bg2 for delayed time text */
   --warn-text: oklch(40% 0.15 55);
 
   --ok-bg:   var(--uchu-green-1);
@@ -101,14 +101,15 @@ main { padding: 1rem 1.25rem; max-width: 680px; margin: 0 auto; }
 .service-card.status-on-time { border-left: 4px solid var(--ok); }
 
 .service-header { display: flex; gap: 0.5rem; align-items: baseline; margin-bottom: 0.3rem; }
-.train-id { font-weight: 700; font-size: 0.9rem; color: var(--muted); }
 .operator { font-size: 0.85rem; color: var(--muted); }
 .dest { font-weight: 600; }
 .service-times { display: flex; gap: 0.75rem; align-items: baseline; flex-wrap: wrap; }
 .time-booked { font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .time-real { font-size: 1rem; color: var(--warn-text); }
 .time-real.delay { color: var(--uchu-red-8); }
-.platform { margin-left: auto; font-size: 0.85rem; background: var(--border); padding: 0.1rem 0.4rem; border-radius: 3px; }
+.arr-time { font-size: 0.9rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.train-status-badge { font-size: 0.8rem; font-weight: 600; color: var(--uchu-green-9); background: var(--ok-bg); padding: 0.1rem 0.4rem; border-radius: 3px; }
+.platform { margin-left: auto; font-size: 1.15rem; font-weight: 700; background: var(--border); padding: 0.2rem 0.6rem; border-radius: 4px; font-variant-numeric: tabular-nums; }
 .status-badge { display: none; }
 
 /* Calling points */
@@ -172,9 +173,9 @@ main { padding: 1rem 1.25rem; max-width: 680px; margin: 0 auto; }
   border-bottom: 0.5px solid var(--border);
   display: flex; align-items: center; justify-content: space-between;
 }
-.operator-row { display: flex; align-items: center; gap: 8px; }
+.operator-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .operator-name { font-size: 14px; color: var(--muted); font-weight: 500; }
-.train-id-small { font-size: 13px; color: var(--muted); opacity: 0.7; }
+.final-dest { font-size: 14px; font-weight: 700; color: var(--text); }
 .btn-remove-leg {
   margin-left: auto;
   padding: 2px 7px;
@@ -186,7 +187,7 @@ main { padding: 1rem 1.25rem; max-width: 680px; margin: 0 auto; }
 }
 .btn-remove-leg:hover { background: var(--alert-bg); color: var(--alert); }
 
-/* Status badge (pill) — overrides the global display:none from .status-badge */
+/* Status badge (pill) - overrides the global display:none from .status-badge */
 .leg-card .status-badge {
   display: inline-flex; align-items: center; gap: 4px;
   font-size: 13px; font-weight: 600; padding: 3px 8px;

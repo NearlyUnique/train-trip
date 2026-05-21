@@ -18,8 +18,9 @@ type rttAPI interface {
 }
 
 type server struct {
-	rtt  rttAPI
-	tmpl *template.Template
+	rtt      rttAPI
+	tmpl     *template.Template
+	basePath string
 }
 
 // -- helpers --
@@ -113,20 +114,23 @@ type DeparturesFragment struct {
 	Date       string
 	After      string // HHMM - only show departures at/after this time
 	Legs       string // accumulated legs param
+	To         string // destination CRS filter (empty = no filter)
 	Services   []ServiceRow
 }
 
 type ServiceRow struct {
-	UID           string
-	Date          string
-	TrainID       string
-	Operator      string
-	DestName      string
-	Platform      string
-	Booked        string // HHMM
-	Realtime      string // HHMM
-	DelayMins     int
-	Status        string // "on-time" | "delayed" | "cancelled"
+	UID         string
+	Date        string
+	TrainID     string
+	Operator    string
+	DestName    string
+	Platform    string
+	Booked      string // HHMM
+	Realtime    string // HHMM
+	ArrBooked   string // HHMM scheduled arrival at user's destination (set when to == terminal CRS)
+	DelayMins   int
+	Status      string // "on-time" | "delayed" | "cancelled"
+	TrainStatus string // human-readable train position, e.g. "At platform"
 }
 
 type CallingFragment struct {
@@ -136,6 +140,7 @@ type CallingFragment struct {
 	Operator    string
 	OriginCRS   string // current leg origin
 	Legs        string // accumulated legs param (does NOT yet include current leg)
+	To          string // destination CRS to carry through to subsequent departure searches
 	Points      []CallPoint
 }
 
@@ -174,6 +179,8 @@ type LegCard struct {
 	Operator         string
 	OriginName       string
 	DestName         string
+	FinalDest        string // terminal station of the train when different from DestName
+	TrainStatus      string // human-readable train position at origin, e.g. "At platform"
 	DestCRS          string // CRS code of destination, for departure filtering
 	DepBooked        string
 	DepRealtime      string
@@ -216,7 +223,7 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "base.html", SearchPage{Stations: stations})
 }
 
-func serviceToRow(svc Service, minTime string) (ServiceRow, bool) {
+func serviceToRow(svc Service, minTime, to string) (ServiceRow, bool) {
 	if !svc.ScheduleMeta.InPassengerService {
 		return ServiceRow{}, false
 	}
@@ -233,28 +240,40 @@ func serviceToRow(svc Service, minTime string) (ServiceRow, bool) {
 		return ServiceRow{}, false
 	}
 	destName := ""
+	arrBooked := ""
 	if len(svc.Destination) > 0 {
-		destName = svc.Destination[0].Location.Description
+		dest := svc.Destination[0]
+		destName = dest.Location.Description
+		if to != "" {
+			for _, code := range dest.Location.ShortCodes {
+				if code == to {
+					arrBooked = fmtTime(isoToHHMM(dest.TemporalData.ScheduleAdvertised))
+					break
+				}
+			}
+		}
 	}
 	delay := delayMins(booked, dep)
 	return ServiceRow{
-		UID:       svc.ScheduleMeta.Identity,
-		Date:      runDateToYMD(svc.ScheduleMeta.DepartureDate),
-		TrainID:   svc.ScheduleMeta.TrainReportingIdentity,
-		Operator:  svc.ScheduleMeta.Operator.Name,
-		DestName:  destName,
-		Platform:  svc.LocationMeta.Platform.Planned,
-		Booked:    fmtTime(booked),
-		Realtime:  fmtTime(dep),
-		DelayMins: delay,
-		Status:    statusLabel(td.DisplayAs, delay),
+		UID:         svc.ScheduleMeta.Identity,
+		Date:        runDateToYMD(svc.ScheduleMeta.DepartureDate),
+		TrainID:     svc.ScheduleMeta.TrainReportingIdentity,
+		Operator:    svc.ScheduleMeta.Operator.Name,
+		DestName:    destName,
+		Platform:    bestPlatform(svc.LocationMeta),
+		Booked:      fmtTime(booked),
+		Realtime:    fmtTime(dep),
+		ArrBooked:   arrBooked,
+		DelayMins:   delay,
+		Status:      statusLabel(td.DisplayAs, delay),
+		TrainStatus: humanTrainStatus(td.Status),
 	}, true
 }
 
-func buildServiceRows(services []Service, minTime string) []ServiceRow {
+func buildServiceRows(services []Service, minTime, to string) []ServiceRow {
 	rows := make([]ServiceRow, 0, 10)
 	for _, svc := range services {
-		row, ok := serviceToRow(svc, minTime)
+		row, ok := serviceToRow(svc, minTime, to)
 		if !ok {
 			continue
 		}
@@ -302,7 +321,7 @@ func (s *server) handleDepartures(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows := buildServiceRows(sr.Services, minTime)
+	rows := buildServiceRows(sr.Services, minTime, to)
 
 	s.render(w, "departures.html", DeparturesFragment{
 		Origin:     origin,
@@ -310,17 +329,19 @@ func (s *server) handleDepartures(w http.ResponseWriter, r *http.Request) {
 		Date:       date,
 		After:      fmtTime(after),
 		Legs:       legsParam,
+		To:         to,
 		Services:   rows,
 	})
 }
 
-// GET /calling-points/{uid}/{date}?originCRS=SHF&legs=...
+// GET /calling-points/{uid}/{date}?originCRS=SHF&legs=...&to=MAN
 func (s *server) handleCallingPoints(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	uid := vars["uid"]
 	date := vars["date"]
 	originCRS := strings.ToUpper(r.URL.Query().Get("originCRS"))
 	legsParam := r.URL.Query().Get("legs")
+	to := strings.ToUpper(r.URL.Query().Get("to"))
 
 	svc, err := s.rtt.GetService(uid, date)
 	if err != nil {
@@ -360,6 +381,22 @@ func (s *server) handleCallingPoints(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	// If the user specified a destination, auto-redirect to the journey page.
+	if to != "" {
+		for _, pt := range points {
+			if pt.CRS == to {
+				newLeg := uid + "|" + date + "|" + originCRS + "|" + to
+				allLegs := newLeg
+				if legsParam != "" {
+					allLegs = legsParam + "," + newLeg
+				}
+				w.Header().Set("HX-Redirect", s.basePath+"/journey?legs="+allLegs)
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+		}
+	}
+
 	s.render(w, "calling.html", CallingFragment{
 		UID:       uid,
 		Date:      date,
@@ -367,6 +404,7 @@ func (s *server) handleCallingPoints(w http.ResponseWriter, r *http.Request) {
 		Operator:  svc.ScheduleMeta.Operator.Name,
 		OriginCRS: originCRS,
 		Legs:      legsParam,
+		To:        to,
 		Points:    points,
 	})
 }
@@ -448,6 +486,7 @@ func (s *server) buildLegCards(legs []Leg, legsParam string) []LegCard {
 				card.DepRealtime = fmtTime(rt)
 				card.Platform = bestPlatform(loc.LocationMeta)
 				card.DelayMins = delayMins(booked, rt)
+				card.TrainStatus = humanTrainStatus(loc.TemporalData.Status)
 			}
 			if loc.CRS() == leg.Dest {
 				booked, rt := "", ""
@@ -468,6 +507,10 @@ func (s *server) buildLegCards(legs []Leg, legsParam string) []LegCard {
 		}
 
 		card.InTransit = buildInTransitInfo(svc, leg.Origin, leg.Dest)
+
+		if terminal := terminalStation(svc); terminal != card.DestName {
+			card.FinalDest = terminal
+		}
 
 		// Determine status
 		depHHMM := strings.ReplaceAll(card.DepRealtime, ":", "")
@@ -692,6 +735,39 @@ func cancelReason(svc *ServiceResponse) string {
 			return svc.Reasons[0].LongText
 		}
 		return delayCauses[svc.Reasons[0].Code]
+	}
+	return ""
+}
+
+func humanTrainStatus(s string) string {
+	switch s {
+	case "APPROACHING":
+		return "Approaching"
+	case "ARRIVING":
+		return "Arriving"
+	case "AT_PLATFORM":
+		return "At platform"
+	case "DEPART_PREPARING", "DEPART_READY":
+		return "Ready to depart"
+	case "DEPARTING":
+		return "Departing"
+	default:
+		return ""
+	}
+}
+
+// terminalStation returns the name of the last CALL or TERMINATES location in the service,
+// using the stations lookup so the result is consistent with LegCard.DestName.
+func terminalStation(svc *ServiceResponse) string {
+	for i := len(svc.Locations) - 1; i >= 0; i-- {
+		loc := svc.Locations[i]
+		da := loc.TemporalData.DisplayAs
+		if da == "CALL" || da == "TERMINATES" {
+			if crs := loc.CRS(); crs != "" {
+				return stationName(crs)
+			}
+			return loc.Location.Description
+		}
 	}
 	return ""
 }

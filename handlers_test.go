@@ -316,8 +316,8 @@ func TestHandleDepartures_ServiceFiltering(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	body := w.Body.String()
-	assert.Contains(t, body, "ONTIME")
-	assert.Contains(t, body, "DELAYED")
+	assert.Contains(t, body, "Manchester") // valid on-time service destination
+	assert.Contains(t, body, "Leeds")       // valid delayed service destination
 	assert.NotContains(t, body, "NONPASS")
 	assert.NotContains(t, body, "CANCAS")
 	assert.NotContains(t, body, "NILDEP")
@@ -344,7 +344,7 @@ func TestHandleDepartures_ToFilter_CallsAt(t *testing.T) {
 	srv.handleDepartures(w, r)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "THRU")
+	assert.Contains(t, w.Body.String(), "Edinburgh") // service destination should appear
 }
 
 // --- handleCallingPoints ---
@@ -1225,4 +1225,298 @@ func TestCallingPoints_CancelledFiltered(t *testing.T) {
 	assert.Contains(t, body, "MCO")
 	// CANCELLED stop (MIA) should NOT appear
 	assert.NotContains(t, body, "MIA")
+}
+
+// --- humanTrainStatus ---
+
+func TestHumanTrainStatus(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"APPROACHING", "Approaching"},
+		{"ARRIVING", "Arriving"},
+		{"AT_PLATFORM", "At platform"},
+		{"DEPART_PREPARING", "Ready to depart"},
+		{"DEPART_READY", "Ready to depart"},
+		{"DEPARTING", "Departing"},
+		{"", ""},
+		{"UNKNOWN_VALUE", ""},
+	}
+	for _, tc := range cases {
+		assert.Equal(t, tc.want, humanTrainStatus(tc.in), "input: %q", tc.in)
+	}
+}
+
+// --- terminalStation ---
+
+func TestTerminalStation_Normal(t *testing.T) {
+	svc := &ServiceResponse{
+		Locations: []ServiceLocation{
+			{Location: StopLocation{Description: "Sheffield"}, TemporalData: ServiceTemporalData{DisplayAs: "CALL"}},
+			{Location: StopLocation{Description: "Doncaster"}, TemporalData: ServiceTemporalData{DisplayAs: "CALL"}},
+			{Location: StopLocation{Description: "York"}, TemporalData: ServiceTemporalData{DisplayAs: "CALL"}},
+		},
+	}
+	assert.Equal(t, "York", terminalStation(svc))
+}
+
+func TestTerminalStation_Terminates(t *testing.T) {
+	svc := &ServiceResponse{
+		Locations: []ServiceLocation{
+			{Location: StopLocation{Description: "Sheffield"}, TemporalData: ServiceTemporalData{DisplayAs: "CALL"}},
+			{Location: StopLocation{Description: "York"}, TemporalData: ServiceTemporalData{DisplayAs: "TERMINATES"}},
+		},
+	}
+	assert.Equal(t, "York", terminalStation(svc))
+}
+
+func TestTerminalStation_SkipsPass(t *testing.T) {
+	svc := &ServiceResponse{
+		Locations: []ServiceLocation{
+			{Location: StopLocation{Description: "Sheffield"}, TemporalData: ServiceTemporalData{DisplayAs: "CALL"}},
+			{Location: StopLocation{Description: "Doncaster"}, TemporalData: ServiceTemporalData{DisplayAs: "PASS"}},
+		},
+	}
+	assert.Equal(t, "Sheffield", terminalStation(svc))
+}
+
+func TestTerminalStation_Empty(t *testing.T) {
+	assert.Equal(t, "", terminalStation(&ServiceResponse{}))
+}
+
+// --- ServiceRow.ArrBooked ---
+
+func TestServiceToRow_ArrBooked_MatchesTerminal(t *testing.T) {
+	svc := Service{
+		ScheduleMeta: ServiceScheduleMeta{
+			Identity:           "X1",
+			InPassengerService: true,
+			DepartureDate:      "2026-05-11",
+		},
+		TemporalData: ServiceTemporalData{
+			DisplayAs: "CALL",
+			Departure: &TemporalPoint{
+				ScheduleAdvertised: iso("0900"),
+				RealtimeForecast:   iso("0900"),
+			},
+		},
+		Destination: []StationStop{
+			{
+				Location:     StopLocation{ShortCodes: []string{"CBG"}, Description: "Cambridge"},
+				TemporalData: StopTemporal{ScheduleAdvertised: iso("1015")},
+			},
+		},
+	}
+	row, ok := serviceToRow(svc, "0800", "CBG")
+	require.True(t, ok)
+	assert.Equal(t, "10:15", row.ArrBooked)
+}
+
+func TestServiceToRow_ArrBooked_NoMatchIntermediate(t *testing.T) {
+	svc := Service{
+		ScheduleMeta: ServiceScheduleMeta{
+			Identity:           "X2",
+			InPassengerService: true,
+			DepartureDate:      "2026-05-11",
+		},
+		TemporalData: ServiceTemporalData{
+			DisplayAs: "CALL",
+			Departure: &TemporalPoint{
+				ScheduleAdvertised: iso("0900"),
+				RealtimeForecast:   iso("0900"),
+			},
+		},
+		Destination: []StationStop{
+			{
+				Location:     StopLocation{ShortCodes: []string{"EDB"}, Description: "Edinburgh"},
+				TemporalData: StopTemporal{ScheduleAdvertised: iso("1300")},
+			},
+		},
+	}
+	// filtering to an intermediate stop that is not the terminal
+	row, ok := serviceToRow(svc, "0800", "YRK")
+	require.True(t, ok)
+	assert.Equal(t, "", row.ArrBooked)
+}
+
+func TestServiceToRow_ArrBooked_EmptyTo(t *testing.T) {
+	svc := Service{
+		ScheduleMeta: ServiceScheduleMeta{
+			Identity:           "X3",
+			InPassengerService: true,
+			DepartureDate:      "2026-05-11",
+		},
+		TemporalData: ServiceTemporalData{
+			DisplayAs: "CALL",
+			Departure: &TemporalPoint{
+				ScheduleAdvertised: iso("0900"),
+				RealtimeForecast:   iso("0900"),
+			},
+		},
+		Destination: []StationStop{
+			{
+				Location:     StopLocation{ShortCodes: []string{"CBG"}},
+				TemporalData: StopTemporal{ScheduleAdvertised: iso("1015")},
+			},
+		},
+	}
+	row, ok := serviceToRow(svc, "0800", "")
+	require.True(t, ok)
+	assert.Equal(t, "", row.ArrBooked)
+}
+
+// --- ServiceRow.TrainStatus ---
+
+func TestServiceToRow_TrainStatus(t *testing.T) {
+	svc := Service{
+		ScheduleMeta: ServiceScheduleMeta{
+			Identity:           "X4",
+			InPassengerService: true,
+			DepartureDate:      "2026-05-11",
+		},
+		TemporalData: ServiceTemporalData{
+			DisplayAs: "CALL",
+			Status:    "AT_PLATFORM",
+			Departure: &TemporalPoint{
+				ScheduleAdvertised: iso("0900"),
+				RealtimeForecast:   iso("0900"),
+			},
+		},
+	}
+	row, ok := serviceToRow(svc, "0800", "")
+	require.True(t, ok)
+	assert.Equal(t, "At platform", row.TrainStatus)
+}
+
+// --- handleCallingPoints auto-redirect ---
+
+func TestCallingPoints_AutoRedirect_WhenToInRoute(t *testing.T) {
+	mock := &rttAPIMock{
+		GetServiceFunc: func(uid, date string) (*ServiceResponse, error) {
+			return &ServiceResponse{
+				ScheduleMeta: ServiceScheduleMeta{TrainReportingIdentity: "1A23", Operator: Operator{Name: "Test Rail"}},
+				Locations: []ServiceLocation{
+					svcLoc("SHF", "0900", "0900", "", ""),
+					{Location: StopLocation{ShortCodes: []string{"MAN"}, Description: "Manchester Piccadilly"},
+						TemporalData: ServiceTemporalData{DisplayAs: "CALL",
+							Arrival: &TemporalPoint{ScheduleAdvertised: iso("0945"), RealtimeForecast: iso("0950")}}},
+				},
+			}, nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	req := httptest.NewRequest(http.MethodGet, "/calling-points/A1/20260511?originCRS=SHF&to=MAN", nil)
+	req = mux.SetURLVars(req, map[string]string{"uid": "A1", "date": "20260511"})
+	w := httptest.NewRecorder()
+	srv.handleCallingPoints(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	redirect := w.Header().Get("HX-Redirect")
+	assert.Contains(t, redirect, "/journey")
+	assert.Contains(t, redirect, "A1|20260511|SHF|MAN")
+}
+
+func TestCallingPoints_NoRedirect_WhenToNotInRoute(t *testing.T) {
+	mock := &rttAPIMock{
+		GetServiceFunc: func(uid, date string) (*ServiceResponse, error) {
+			return &ServiceResponse{
+				ScheduleMeta: ServiceScheduleMeta{TrainReportingIdentity: "1A23", Operator: Operator{Name: "Test Rail"}},
+				Locations: []ServiceLocation{
+					svcLoc("SHF", "0900", "0900", "", ""),
+					{Location: StopLocation{ShortCodes: []string{"MAN"}, Description: "Manchester Piccadilly"},
+						TemporalData: ServiceTemporalData{DisplayAs: "CALL",
+							Arrival: &TemporalPoint{ScheduleAdvertised: iso("0945"), RealtimeForecast: iso("0950")}}},
+				},
+			}, nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	req := httptest.NewRequest(http.MethodGet, "/calling-points/A1/20260511?originCRS=SHF&to=EDB", nil)
+	req = mux.SetURLVars(req, map[string]string{"uid": "A1", "date": "20260511"})
+	w := httptest.NewRecorder()
+	srv.handleCallingPoints(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Empty(t, w.Header().Get("HX-Redirect"))
+	assert.Contains(t, w.Body.String(), "Manchester Piccadilly")
+}
+
+func TestCallingPoints_AutoRedirect_CarriesExistingLegs(t *testing.T) {
+	mock := &rttAPIMock{
+		GetServiceFunc: func(uid, date string) (*ServiceResponse, error) {
+			return &ServiceResponse{
+				ScheduleMeta: ServiceScheduleMeta{TrainReportingIdentity: "1A23", Operator: Operator{Name: "Test Rail"}},
+				Locations: []ServiceLocation{
+					svcLoc("MAN", "1000", "1000", "", ""),
+					{Location: StopLocation{ShortCodes: []string{"LDS"}, Description: "Leeds"},
+						TemporalData: ServiceTemporalData{DisplayAs: "CALL",
+							Arrival: &TemporalPoint{ScheduleAdvertised: iso("1100"), RealtimeForecast: iso("1100")}}},
+				},
+			}, nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	existingLegs := "A1|20260511|SHF|MAN"
+	req := httptest.NewRequest(http.MethodGet, "/calling-points/B2/20260511?originCRS=MAN&to=LDS&legs="+existingLegs, nil)
+	req = mux.SetURLVars(req, map[string]string{"uid": "B2", "date": "20260511"})
+	w := httptest.NewRecorder()
+	srv.handleCallingPoints(w, req)
+	redirect := w.Header().Get("HX-Redirect")
+	assert.Contains(t, redirect, existingLegs)
+	assert.Contains(t, redirect, "B2|20260511|MAN|LDS")
+}
+
+// --- buildLegCards FinalDest ---
+
+func TestBuildLegCards_TrainStatus(t *testing.T) {
+	mock := &rttAPIMock{
+		GetServiceFunc: func(uid, date string) (*ServiceResponse, error) {
+			svc := testSvcResp("SHF", "MAN", "0900", "0900", "0945", "0945")
+			for i := range svc.Locations {
+				if svc.Locations[i].CRS() == "SHF" {
+					svc.Locations[i].TemporalData.Status = "AT_PLATFORM"
+				}
+			}
+			return svc, nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	legs := []Leg{{UID: "A1", Date: "20260511", Origin: "SHF", Dest: "MAN"}}
+	cards := srv.buildLegCards(legs, encodeLegs(legs))
+	require.Len(t, cards, 1)
+	assert.Equal(t, "At platform", cards[0].TrainStatus)
+}
+
+func TestBuildLegCards_FinalDest_WhenDifferentFromDest(t *testing.T) {
+	mock := &rttAPIMock{
+		GetServiceFunc: func(uid, date string) (*ServiceResponse, error) {
+			return &ServiceResponse{
+				ScheduleMeta: ServiceScheduleMeta{
+					TrainReportingIdentity: "1A23",
+					Operator:               Operator{Name: "Test Rail"},
+				},
+				Locations: []ServiceLocation{
+					svcLoc("SHF", "0900", "0900", "", ""),
+					svcLoc("MAN", "", "", "0945", "0945"),
+					svcLoc("LDS", "", "", "1030", "1030"),
+				},
+			}, nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	legs := []Leg{{UID: "A1", Date: "20260511", Origin: "SHF", Dest: "MAN"}}
+	cards := srv.buildLegCards(legs, encodeLegs(legs))
+	require.Len(t, cards, 1)
+	// Terminal is Leeds (LDS), destination is Manchester (MAN) — FinalDest should be set
+	assert.Equal(t, stationName("LDS"), cards[0].FinalDest)
+}
+
+func TestBuildLegCards_FinalDest_EmptyWhenSameAsDest(t *testing.T) {
+	mock := &rttAPIMock{
+		GetServiceFunc: func(uid, date string) (*ServiceResponse, error) {
+			return testSvcResp("SHF", "MAN", "0900", "0900", "0945", "0945"), nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	legs := []Leg{{UID: "A1", Date: "20260511", Origin: "SHF", Dest: "MAN"}}
+	cards := srv.buildLegCards(legs, encodeLegs(legs))
+	require.Len(t, cards, 1)
+	// Terminal is Manchester — same as destination, so FinalDest should be empty
+	assert.Equal(t, "", cards[0].FinalDest)
 }

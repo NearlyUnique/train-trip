@@ -50,7 +50,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	srv := &server{rtt: rttClient, tmpl: tmpl}
+	srv := &server{rtt: rttClient, tmpl: tmpl, basePath: basePath}
 
 	r := mux.NewRouter()
 	r.HandleFunc("/", srv.handleIndex).Methods(http.MethodGet)

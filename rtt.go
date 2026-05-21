@@ -251,6 +251,7 @@ type ServiceTemporalData struct {
 	Arrival   *TemporalPoint `json:"arrival"`
 	Departure *TemporalPoint `json:"departure"`
 	DisplayAs string         `json:"displayAs"`
+	Status    string         `json:"status"`
 }
 
 type TemporalPoint struct {
