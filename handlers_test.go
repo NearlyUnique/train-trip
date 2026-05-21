@@ -114,7 +114,7 @@ func TestStatusLabel(t *testing.T) {
 
 func TestNowHHMM(t *testing.T) {
 	result := nowHHMM()
-	assert.Len(t, result, 4)
+	assert.Len(t, result, 5)
 	h, m := result[:2], result[2:]
 	assert.NotEmpty(t, h)
 	assert.NotEmpty(t, m)
@@ -151,8 +151,8 @@ func TestStationName(t *testing.T) {
 func newTestServer(t *testing.T, mock rttAPI) *server {
 	t.Helper()
 	tmpl, err := template.New("").Funcs(template.FuncMap{
-		"nowTime":  func() string { return "09:00" },
-		"basePath": func() string { return "" },
+		"nowTime":      func() string { return "09:00" },
+		"basePath":     func() string { return "" },
 		"stationsJSON": stationsJSON,
 		"abs": func(n int) int {
 			if n < 0 {
@@ -317,7 +317,7 @@ func TestHandleDepartures_ServiceFiltering(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	body := w.Body.String()
 	assert.Contains(t, body, "Manchester") // valid on-time service destination
-	assert.Contains(t, body, "Leeds")       // valid delayed service destination
+	assert.Contains(t, body, "Leeds")      // valid delayed service destination
 	assert.NotContains(t, body, "NONPASS")
 	assert.NotContains(t, body, "CANCAS")
 	assert.NotContains(t, body, "NILDEP")
@@ -1016,12 +1016,12 @@ func TestBuildInTransitInfo(t *testing.T) {
 		info := buildInTransitInfo(makeSvcForTransit(), "CMB", "LST")
 		assert.True(t, info.Active)
 		assert.Equal(t, "Cambridge", info.LastStopName)
-		assert.Equal(t, -1, info.RunningDelayMins)    // Cambridge departed 1m early
+		assert.Equal(t, -1, info.RunningDelayMins) // Cambridge departed 1m early
 		assert.Equal(t, "Audley End", info.NextStopName)
 		assert.Equal(t, "12:38", info.NextStopTime)
-		assert.Equal(t, -1, info.NextStopDelayMins)   // Audley End forecast 1m early
-		assert.Equal(t, "1", info.NextStopPlatform)   // platform.forecast = "1"
-		assert.Equal(t, 3, info.StopsRemaining)       // AUD, BIS, LST
+		assert.Equal(t, -1, info.NextStopDelayMins) // Audley End forecast 1m early
+		assert.Equal(t, "1", info.NextStopPlatform) // platform.forecast = "1"
+		assert.Equal(t, 3, info.StopsRemaining)     // AUD, BIS, LST
 	})
 
 	t.Run("not in transit — origin not yet departed", func(t *testing.T) {
@@ -1055,6 +1055,14 @@ func TestBuildInTransitInfo(t *testing.T) {
 		info := buildInTransitInfo(makeSvcForTransit(), "XYZ", "LST")
 		assert.False(t, info.Active)
 	})
+
+	t.Run("LastStopStatus set when train is AT_PLATFORM at intermediate stop", func(t *testing.T) {
+		svc := makeSvcForTransit()
+		svc.Locations[1].TemporalData.Status = "AT_PLATFORM"
+		info := buildInTransitInfo(svc, "CMB", "LST")
+		assert.True(t, info.Active)
+		assert.Equal(t, "At platform", info.LastStopStatus)
+	})
 }
 
 func TestBuildLegCards_DestPlatform(t *testing.T) {
@@ -1065,6 +1073,48 @@ func TestBuildLegCards_DestPlatform(t *testing.T) {
 	cards := srv.buildLegCards(legs, encodeLegs(legs))
 	require.Len(t, cards, 1)
 	assert.Equal(t, "3", cards[0].DestPlatform) // forecast platform on LST
+}
+
+func TestBuildLegCards_DestTrainStatus(t *testing.T) {
+	svc := makeSvcForTransit()
+	svc.Locations[4].TemporalData.Status = "AT_PLATFORM" // LST is index 4
+	mock := &rttAPIMock{GetServiceFunc: func(uid, date string) (*ServiceResponse, error) { return svc, nil }}
+	srv := newTestServer(t, mock)
+	legs := []Leg{{UID: "A1", Date: "20260511", Origin: "CMB", Dest: "LST"}}
+	cards := srv.buildLegCards(legs, encodeLegs(legs))
+	require.Len(t, cards, 1)
+	assert.Equal(t, "At platform", cards[0].DestTrainStatus)
+}
+
+func TestHandleCallingPoints_NoTo_ShowsDestAndTime(t *testing.T) {
+	mock := &rttAPIMock{
+		GetServiceFunc: func(uid, date string) (*ServiceResponse, error) {
+			return &ServiceResponse{
+				ScheduleMeta: ServiceScheduleMeta{
+					TrainReportingIdentity: "1A23",
+					Operator:               Operator{Name: "Test Rail"},
+				},
+				Locations: []ServiceLocation{
+					{Location: StopLocation{ShortCodes: []string{"SHF"}, Description: "Sheffield"},
+						TemporalData: ServiceTemporalData{DisplayAs: "ORIGINATE",
+							Departure: &TemporalPoint{ScheduleAdvertised: iso("0900"), RealtimeForecast: iso("0900")}}},
+					{Location: StopLocation{ShortCodes: []string{"MAN"}, Description: "Manchester Piccadilly"},
+						TemporalData: ServiceTemporalData{DisplayAs: "TERMINATES",
+							Arrival: &TemporalPoint{ScheduleAdvertised: iso("0945"), RealtimeForecast: iso("0945")}}},
+				},
+			}, nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	req := httptest.NewRequest(http.MethodGet, "/calling-points/A1/20260511?originCRS=SHF", nil)
+	req = mux.SetURLVars(req, map[string]string{"uid": "A1", "date": "20260511"})
+	w := httptest.NewRecorder()
+	srv.handleCallingPoints(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, "Manchester Piccadilly")
+	assert.Contains(t, body, "09:00")
+	assert.NotContains(t, body, "Test Rail") // operator should not appear in h2 when no to
 }
 
 func TestIsCancelled(t *testing.T) {

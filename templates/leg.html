@@ -10,7 +10,6 @@
     <div class="operator-row">
       <span class="operator-name">{{.Operator}}</span>
       {{if .FinalDest}}<span class="final-dest">to {{.FinalDest}}</span>{{end}}
-      {{if .TrainStatus}}<span class="train-status-badge">{{.TrainStatus}}</span>{{end}}
     </div>
     {{if eq .Status "on-time"}}<span class="status-badge badge-ok"><i class="ti ti-check" aria-hidden="true"></i> On time</span>
     {{else if eq .Status "delayed"}}<span class="status-badge badge-warn"><i class="ti ti-clock" aria-hidden="true"></i> {{.DelayMins}} min late</span>
@@ -27,7 +26,7 @@
     <div class="origin-dest">
 
       <div class="station-col">
-        <div class="station-name">{{.OriginName}}</div>
+        <div class="station-name">{{.OriginName}}{{if .TrainStatus}} <span class="train-station-badge">{{.TrainStatus}}</span>{{end}}</div>
         <div class="time-row">
           <span class="time-planned {{if ne .DepBooked .DepRealtime}}strikethrough{{end}}">{{.DepBooked}}</span>
           {{if ne .DepBooked .DepRealtime}}
@@ -48,7 +47,7 @@
       </div>
 
       <div class="station-col dest-col">
-        <div class="station-name">{{.DestName}}</div>
+        <div class="station-name">{{if .DestTrainStatus}}<span class="train-station-badge">{{.DestTrainStatus}}</span> {{end}}{{.DestName}}</div>
         {{if .ArrBooked}}
         <div class="time-row">
           <span class="time-planned {{if and .ArrRealtime (ne .ArrBooked .ArrRealtime)}}strikethrough{{end}}">{{.ArrBooked}}</span>
@@ -80,7 +79,7 @@
   <hr class="divider">
   <div class="progress-section">
     <div class="progress-status-text">
-      {{.InTransit.LastStopName}} → {{.InTransit.NextStopName}}
+      {{.InTransit.LastStopName}}{{if .InTransit.LastStopStatus}} <span class="train-station-badge">{{.InTransit.LastStopStatus}}</span>{{end}} → {{.InTransit.NextStopName}}
       {{- if .InTransit.NextStopTime}} · <strong>{{.InTransit.NextStopTime}}</strong>{{end}}
       {{- if lt .InTransit.RunningDelayMins 0}} · <em class="delay-badge early-badge">{{abs .InTransit.RunningDelayMins}}m early</em>
       {{- else if gt .InTransit.RunningDelayMins 0}} · <em class="delay-badge">{{.InTransit.RunningDelayMins}}m late</em>{{end}}

@@ -1,6 +1,6 @@
 {{define "calling.html"}}
 <section class="calling-points" id="results">
-  <h2>{{.Operator}}</h2>
+  {{if .To}}<h2>{{.Operator}}</h2>{{else}}<h2>{{.DestName}} · {{.DepartureTime}}</h2>{{end}}
   <p class="calling-subtitle">Select your destination or a change point</p>
 
   {{if not .Points}}

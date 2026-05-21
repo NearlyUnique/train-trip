@@ -46,7 +46,7 @@ func todayYMD() string {
 }
 
 func nowHHMM() string {
-	return time.Now().Format("1504")
+	return time.Now().Format("15:04")
 }
 
 // parseDate converts "2006-01-02" or "20060102" to "20060102".
@@ -134,14 +134,16 @@ type ServiceRow struct {
 }
 
 type CallingFragment struct {
-	UID         string
-	Date        string
-	TrainID     string
-	Operator    string
-	OriginCRS   string // current leg origin
-	Legs        string // accumulated legs param (does NOT yet include current leg)
-	To          string // destination CRS to carry through to subsequent departure searches
-	Points      []CallPoint
+	UID           string
+	Date          string
+	TrainID       string
+	Operator      string
+	OriginCRS     string // current leg origin
+	Legs          string // accumulated legs param (does NOT yet include current leg)
+	To            string // destination CRS to carry through to subsequent departure searches
+	Points        []CallPoint
+	DestName      string // terminal station of the service
+	DepartureTime string // scheduled departure from origin
 }
 
 type CallPoint struct {
@@ -188,9 +190,9 @@ type LegCard struct {
 	ArrRealtime      string
 	Platform         string
 	DelayMins        int
-	Status           string // "on-time" | "delayed" | "cancelled" | "missed"
-	CancelReason     string // human-readable cancellation reason, if known
-	Completed        bool   // true when arrival time has passed
+	Status           string    // "on-time" | "delayed" | "cancelled" | "missed"
+	CancelReason     string    // human-readable cancellation reason, if known
+	Completed        bool      // true when arrival time has passed
 	TightConnection  bool      // true when gap from prior leg is ≤ 10 min
 	ConnectionMins   int       // minutes available for the connection
 	NextDeps         []NextDep // alternative departures from interchange
@@ -201,6 +203,7 @@ type LegCard struct {
 	PriorLegsParam   string // encoded legs before this one, for departure navigation
 	DestLongCode     string // RTT longCode for dest, for departure filtering
 	DestPlatform     string
+	DestTrainStatus  string // human-readable train position at destination, e.g. "At platform"
 	InTransit        InTransitInfo
 }
 
@@ -209,8 +212,9 @@ type InTransitInfo struct {
 	LastStopName      string
 	NextStopName      string
 	NextStopTime      string
-	NextStopDelayMins int    // negative = early vs schedule; positive = late
+	NextStopDelayMins int // negative = early vs schedule; positive = late
 	NextStopPlatform  string
+	LastStopStatus    string // human-readable status at last recorded stop, e.g. "At platform"
 	RunningDelayMins  int    // lateness at last actual stop; negative = early
 	StopsRemaining    int    // from next stop to destination, inclusive
 	ProgressPercent   int    // 4–100, based on actual dep vs scheduled arr
@@ -397,15 +401,27 @@ func (s *server) handleCallingPoints(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var deptTime string
+	for _, loc := range svc.Locations {
+		if loc.CRS() == originCRS {
+			if loc.TemporalData.Departure != nil {
+				deptTime = fmtTime(isoToHHMM(loc.TemporalData.Departure.ScheduleAdvertised))
+			}
+			break
+		}
+	}
+
 	s.render(w, "calling.html", CallingFragment{
-		UID:       uid,
-		Date:      date,
-		TrainID:   svc.ScheduleMeta.TrainReportingIdentity,
-		Operator:  svc.ScheduleMeta.Operator.Name,
-		OriginCRS: originCRS,
-		Legs:      legsParam,
-		To:        to,
-		Points:    points,
+		UID:           uid,
+		Date:          date,
+		TrainID:       svc.ScheduleMeta.TrainReportingIdentity,
+		Operator:      svc.ScheduleMeta.Operator.Name,
+		OriginCRS:     originCRS,
+		Legs:          legsParam,
+		To:            to,
+		Points:        points,
+		DestName:      terminalStation(svc),
+		DepartureTime: deptTime,
 	})
 }
 
@@ -500,6 +516,7 @@ func (s *server) buildLegCards(legs []Leg, legsParam string) []LegCard {
 				card.ArrBooked = fmtTime(booked)
 				card.ArrRealtime = fmtTime(rt)
 				card.DestPlatform = bestPlatform(loc.LocationMeta)
+				card.DestTrainStatus = humanTrainStatus(loc.TemporalData.Status)
 				if len(loc.Location.LongCodes) > 0 {
 					card.DestLongCode = loc.Location.LongCodes[0]
 				}
@@ -685,7 +702,6 @@ func effectiveDep(td ServiceTemporalData) string {
 	return isoToHHMM(td.Departure.ScheduleAdvertised)
 }
 
-
 func (c *LegCard) isActualDep(svc *ServiceResponse, crs string) bool {
 	for _, loc := range svc.Locations {
 		if loc.CRS() == crs {
@@ -863,6 +879,7 @@ func buildInTransitInfo(svc *ServiceResponse, originCRS, destCRS string) InTrans
 	info := InTransitInfo{
 		Active:           true,
 		LastStopName:     segment[lastIdx].Location.Description,
+		LastStopStatus:   humanTrainStatus(segment[lastIdx].TemporalData.Status),
 		RunningDelayMins: signedRunningDelay(segment[lastIdx]),
 	}
 
@@ -885,7 +902,7 @@ func buildInTransitInfo(svc *ServiceResponse, originCRS, destCRS string) InTrans
 		}
 		if arrMins := hhmm2mins(arrTime); arrMins > depMins {
 			now := time.Now()
-			pct := (now.Hour()*60+now.Minute()-depMins) * 100 / (arrMins - depMins)
+			pct := (now.Hour()*60 + now.Minute() - depMins) * 100 / (arrMins - depMins)
 			if pct < 4 {
 				pct = 4
 			} else if pct > 100 {
