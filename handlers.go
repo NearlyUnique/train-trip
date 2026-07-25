@@ -109,13 +109,15 @@ type SearchPage struct {
 }
 
 type DeparturesFragment struct {
-	Origin     string
-	OriginName string
-	Date       string
-	After      string // HHMM - only show departures at/after this time
-	Legs       string // accumulated legs param
-	To         string // destination CRS filter (empty = no filter)
-	Services   []ServiceRow
+	Origin      string
+	OriginName  string
+	Date        string
+	After       string // HHMM - only show departures at/after this time
+	Legs        string // accumulated legs param
+	To          string // destination CRS filter (empty = no filter)
+	Services    []ServiceRow
+	EarlierTime string // HHMM for "earlier trains" link; empty when already at 0000
+	LaterTime   string // HHMM for "later trains" link
 }
 
 type ServiceRow struct {
@@ -190,7 +192,8 @@ type LegCard struct {
 	ArrRealtime      string
 	Platform         string
 	DelayMins        int
-	Status           string    // "on-time" | "delayed" | "cancelled" | "missed"
+	ArrDelayMins     int       // arrival lateness in minutes, for completed legs
+	Status           string    // "on-time" | "delayed" | "cancelled" | "missed" | "completed"
 	CancelReason     string    // human-readable cancellation reason, if known
 	Completed        bool      // true when arrival time has passed
 	TightConnection  bool      // true when gap from prior leg is ≤ 10 min
@@ -327,14 +330,27 @@ func (s *server) handleDepartures(w http.ResponseWriter, r *http.Request) {
 
 	rows := buildServiceRows(sr.Services, minTime, to)
 
+	earlierTime := addMinutesHHMM(minTime, -60)
+	if minTime == "0000" {
+		earlierTime = ""
+	}
+
+	laterTime := addMinutesHHMM(minTime, 60)
+	if len(rows) > 0 {
+		lastBooked := strings.ReplaceAll(rows[len(rows)-1].Booked, ":", "")
+		laterTime = addMinutesHHMM(lastBooked, 1)
+	}
+
 	s.render(w, "departures.html", DeparturesFragment{
-		Origin:     origin,
-		OriginName: stationName(origin),
-		Date:       date,
-		After:      fmtTime(after),
-		Legs:       legsParam,
-		To:         to,
-		Services:   rows,
+		Origin:      origin,
+		OriginName:  stationName(origin),
+		Date:        date,
+		After:       fmtTime(after),
+		Legs:        legsParam,
+		To:          to,
+		Services:    rows,
+		EarlierTime: earlierTime,
+		LaterTime:   laterTime,
 	})
 }
 
@@ -536,6 +552,10 @@ func (s *server) buildLegCards(legs []Leg, legsParam string) []LegCard {
 		case isCancelled(svc, leg.Origin) || isDestCancelled(svc, leg.Dest):
 			card.Status = "cancelled"
 			card.CancelReason = cancelReason(svc)
+		case isCompleted(svc, leg.Dest):
+			card.Status = "completed"
+			card.Completed = true
+			card.ArrDelayMins = delayMins(card.ArrBooked, card.ArrRealtime)
 		case depHHMM != "" && depHHMM < currentTime && !card.isActualDep(svc, leg.Origin):
 			card.Status = "missed"
 		case card.DelayMins > 0:
@@ -727,6 +747,17 @@ func isCancelled(svc *ServiceResponse, crs string) bool {
 		if loc.CRS() == crs {
 			return loc.TemporalData.DisplayAs == "CANCELLED_CALL" ||
 				(loc.TemporalData.Departure != nil && loc.TemporalData.Departure.IsCancelled)
+		}
+	}
+	return false
+}
+
+// isCompleted reports whether the train has actually arrived at crs (an actual
+// arrival time has been recorded), meaning the leg to that station is finished.
+func isCompleted(svc *ServiceResponse, crs string) bool {
+	for _, loc := range svc.Locations {
+		if loc.CRS() == crs {
+			return loc.TemporalData.Arrival != nil && loc.TemporalData.Arrival.RealtimeActual != ""
 		}
 	}
 	return false
@@ -940,6 +971,23 @@ func hhmm2mins(hhmm string) int {
 		return -1
 	}
 	return h*60 + m
+}
+
+// addMinutesHHMM adds delta minutes to a "HHMM" or "HH:MM" string,
+// clamped to [0000, 2359]. Returns "" if hhmm is invalid.
+func addMinutesHHMM(hhmm string, delta int) string {
+	base := hhmm2mins(hhmm)
+	if base < 0 {
+		return ""
+	}
+	total := base + delta
+	if total < 0 {
+		total = 0
+	}
+	if total > 23*60+59 {
+		total = 23*60 + 59
+	}
+	return fmt.Sprintf("%02d%02d", total/60, total%60)
 }
 
 func statusLabel(displayAs string, delayMins int) string {

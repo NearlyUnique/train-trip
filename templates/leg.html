@@ -2,7 +2,7 @@
 <div class="leg-card status-{{.Status}}"
      id="leg-{{.N}}"
      hx-get="{{basePath}}/leg/{{.N}}?legs={{.LegsParam}}"
-     hx-trigger="every 5m"
+     hx-trigger="every 5m, refresh"
      hx-swap="outerHTML">
 
   <!-- Header: operator + status badge -->
@@ -11,7 +11,8 @@
       <span class="operator-name">{{.Operator}}</span>
       {{if .FinalDest}}<span class="final-dest">to {{.FinalDest}}</span>{{end}}
     </div>
-    {{if eq .Status "on-time"}}<span class="status-badge badge-ok"><i class="ti ti-check" aria-hidden="true"></i> On time</span>
+    {{if eq .Status "completed"}}<span class="status-badge badge-completed"><i class="ti ti-check" aria-hidden="true"></i> Arrived{{if gt .ArrDelayMins 0}} {{.ArrDelayMins}} min late{{end}}</span>
+    {{else if eq .Status "on-time"}}<span class="status-badge badge-ok"><i class="ti ti-check" aria-hidden="true"></i> On time</span>
     {{else if eq .Status "delayed"}}<span class="status-badge badge-warn"><i class="ti ti-clock" aria-hidden="true"></i> {{.DelayMins}} min late</span>
     {{else if eq .Status "cancelled"}}<span class="status-badge badge-alert"><i class="ti ti-x" aria-hidden="true"></i> Cancelled</span>
     {{else if eq .Status "missed"}}<span class="status-badge badge-alert"><i class="ti ti-alert-triangle" aria-hidden="true"></i> Missed</span>
@@ -26,14 +27,18 @@
     <div class="origin-dest">
 
       <div class="station-col">
-        <div class="station-name">{{.OriginName}}{{if .TrainStatus}} <span class="train-station-badge">{{.TrainStatus}}</span>{{end}}</div>
+        <div class="station-name">{{.OriginName}}</div>
+        {{if .TrainStatus}}<div class="station-status"><span class="train-station-badge">{{.TrainStatus}}</span></div>{{end}}
         <div class="time-row">
-          <span class="time-planned {{if ne .DepBooked .DepRealtime}}strikethrough{{end}}">{{.DepBooked}}</span>
-          {{if ne .DepBooked .DepRealtime}}
-          <span class="time-actual {{if eq .Status "cancelled"}}cancelled{{end}}">
-            {{- if eq .Status "cancelled"}}Cancelled{{else}}{{.DepRealtime}}{{if gt .DelayMins 0}} <em class="delay-badge">+{{.DelayMins}}m</em>{{end}}{{end -}}
+          <span class="time-values">
+            <span class="time-planned {{if ne .DepBooked .DepRealtime}}strikethrough{{end}}">{{.DepBooked}}</span>
+            {{if ne .DepBooked .DepRealtime}}
+            <span class="time-actual {{if eq .Status "cancelled"}}cancelled{{end}}">
+              {{- if eq .Status "cancelled"}}Cancelled{{else}}{{.DepRealtime}}{{end -}}
+            </span>
+            {{end}}
           </span>
-          {{end}}
+          {{if and (ne .Status "cancelled") (gt .DelayMins 0)}}<em class="delay-badge">+{{.DelayMins}}m</em>{{end}}
         </div>
         <div class="platform-tag">
           Platform <span class="platform-num {{if not .Platform}}unknown{{end}}">{{if .Platform}}{{.Platform}}{{else}}TBC{{end}}</span>
@@ -47,7 +52,8 @@
       </div>
 
       <div class="station-col dest-col">
-        <div class="station-name">{{if .DestTrainStatus}}<span class="train-station-badge">{{.DestTrainStatus}}</span> {{end}}{{.DestName}}</div>
+        <div class="station-name">{{.DestName}}</div>
+        {{if .DestTrainStatus}}<div class="station-status"><span class="train-station-badge">{{.DestTrainStatus}}</span></div>{{end}}
         {{if .ArrBooked}}
         <div class="time-row">
           <span class="time-planned {{if and .ArrRealtime (ne .ArrBooked .ArrRealtime)}}strikethrough{{end}}">{{.ArrBooked}}</span>

@@ -54,4 +54,27 @@
   initAutocomplete({{stationsJSON .Stations}});
   initAutocomplete({{stationsJSON .Stations}}, 'dest-input', 'dest', 'dest-ac-list', 'search-form', false);
 </script>
+<script>
+  (function () {
+    var STALE_MS = 5 * 60 * 1000;
+    var lastLoad = null;
+    document.body.addEventListener('htmx:afterSwap', function (e) {
+      if (e.detail.target && e.detail.target.id === 'results') {
+        lastLoad = Date.now();
+      }
+    });
+    function maybeRefresh() {
+      if (lastLoad !== null && Date.now() - lastLoad > STALE_MS) {
+        var form = document.getElementById('search-form');
+        if (form) { htmx.trigger(form, 'submit'); }
+      }
+    }
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden) { maybeRefresh(); }
+    });
+    window.addEventListener('pageshow', function (e) {
+      if (e.persisted) { maybeRefresh(); }
+    });
+  })();
+</script>
 {{end}}

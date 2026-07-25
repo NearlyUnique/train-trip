@@ -97,6 +97,16 @@ func TestHhmm2mins(t *testing.T) {
 	assert.Equal(t, -1, hhmm2mins("abcd"))
 }
 
+func TestAddMinutesHHMM(t *testing.T) {
+	assert.Equal(t, "1000", addMinutesHHMM("0900", 60))
+	assert.Equal(t, "0800", addMinutesHHMM("0900", -60))
+	assert.Equal(t, "0901", addMinutesHHMM("09:00", 1))  // colon form
+	assert.Equal(t, "0000", addMinutesHHMM("0030", -60)) // clamp at 0000
+	assert.Equal(t, "2359", addMinutesHHMM("2300", 120)) // clamp at 2359
+	assert.Equal(t, "", addMinutesHHMM("", 60))          // invalid input
+	assert.Equal(t, "", addMinutesHHMM("abcd", 60))
+}
+
 func TestDelayMins(t *testing.T) {
 	assert.Equal(t, 0, delayMins("0900", "0900"))
 	assert.Equal(t, 5, delayMins("0900", "0905"))
@@ -565,6 +575,43 @@ func TestBuildLegCards_CancelledStatus(t *testing.T) {
 	assert.Equal(t, "cancelled", cards[0].Status)
 }
 
+func TestBuildLegCards_CompletedStatus(t *testing.T) {
+	// Origin has actually departed and destination has actually arrived -> completed.
+	svc := testSvcResp("SHF", "MAN", "0900", "0903", "0945", "0948")
+	svc.Locations[0].TemporalData.Departure.RealtimeActual = iso("0903")
+	svc.Locations[1].TemporalData.Arrival.RealtimeActual = iso("0948")
+	mock := &rttAPIMock{
+		GetServiceFunc: func(uid, date string) (*ServiceResponse, error) { return svc, nil },
+	}
+	srv := newTestServer(t, mock)
+	legs := []Leg{{UID: "A1", Date: "20260511", Origin: "SHF", Dest: "MAN"}}
+	cards := srv.buildLegCards(legs, encodeLegs(legs))
+	require.Len(t, cards, 1)
+	assert.Equal(t, "completed", cards[0].Status)
+	assert.True(t, cards[0].Completed)
+	assert.Equal(t, 3, cards[0].ArrDelayMins) // arrived 09:48 vs booked 09:45
+}
+
+func TestBuildLegCards_CancelledBeatsCompleted(t *testing.T) {
+	// Train recorded an actual arrival but the destination call is cancelled
+	// (e.g. cancelled part-way) -> must stay cancelled, never "completed".
+	svc := testSvcResp("SHF", "MAN", "0900", "0903", "0945", "0948")
+	svc.Locations[0].TemporalData.Departure.RealtimeActual = iso("0903")
+	svc.Locations[1].TemporalData.Arrival.RealtimeActual = iso("0948")
+	svc.Locations[1].TemporalData.DisplayAs = "CANCELLED"
+	mock := &rttAPIMock{
+		GetServiceFunc: func(uid, date string) (*ServiceResponse, error) { return svc, nil },
+		SearchDeparturesFunc: func(crs, date, fromTime, to string) (*SearchResponse, error) {
+			return &SearchResponse{}, nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	legs := []Leg{{UID: "A1", Date: "20260511", Origin: "SHF", Dest: "MAN"}}
+	cards := srv.buildLegCards(legs, encodeLegs(legs))
+	require.Len(t, cards, 1)
+	assert.Equal(t, "cancelled", cards[0].Status)
+}
+
 func TestBuildLegCards_NoRealtimeFallback(t *testing.T) {
 	// When RealtimeForecast is empty, times fall back to ScheduleAdvertised.
 	svc := &ServiceResponse{
@@ -963,7 +1010,7 @@ func TestBuildLegCards_ActualDepartedNotMissed(t *testing.T) {
 					Departure: &TemporalPoint{ScheduleAdvertised: iso("0800"), RealtimeForecast: "", RealtimeActual: iso("0801")}}},
 			{Location: StopLocation{ShortCodes: []string{"MAN"}},
 				TemporalData: ServiceTemporalData{DisplayAs: "CALL",
-					Arrival: &TemporalPoint{ScheduleAdvertised: iso("0845"), RealtimeForecast: "", RealtimeActual: iso("0846")}}},
+					Arrival: &TemporalPoint{ScheduleAdvertised: iso("0845"), RealtimeForecast: iso("0846"), RealtimeActual: ""}}},
 		},
 	}
 	mock := &rttAPIMock{GetServiceFunc: func(uid, date string) (*ServiceResponse, error) { return svc, nil }}
@@ -971,7 +1018,7 @@ func TestBuildLegCards_ActualDepartedNotMissed(t *testing.T) {
 	legs := []Leg{{UID: "A1", Date: "20260511", Origin: "SHF", Dest: "MAN"}}
 	cards := srv.buildLegCards(legs, encodeLegs(legs))
 	require.Len(t, cards, 1)
-	assert.Equal(t, "delayed", cards[0].Status)
+	assert.Equal(t, "delayed", cards[0].Status) // departed but not yet arrived: not missed, not completed
 	assert.Equal(t, "08:01", cards[0].DepRealtime) // shows actual departure time
 	assert.Equal(t, "08:46", cards[0].ArrRealtime)
 	assert.Equal(t, 1, cards[0].DelayMins)

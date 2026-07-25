@@ -50,6 +50,12 @@
 
 main { padding: 1rem 1.25rem; max-width: 680px; margin: 0 auto; }
 
+/* Mobile: shrink the side gutter so long station names get more room */
+@media (max-width: 480px) {
+  main { padding: 0.75rem 0.5rem; }
+  .route-section { padding: 12px 8px 10px; }
+}
+
 /* Search */
 .search-section h1 { margin-bottom: 1rem; font-size: 1.4rem; }
 
@@ -104,9 +110,11 @@ main { padding: 1rem 1.25rem; max-width: 680px; margin: 0 auto; }
 .operator { font-size: 0.85rem; color: var(--muted); }
 .dest { font-weight: 600; }
 .service-times { display: flex; gap: 0.75rem; align-items: baseline; flex-wrap: wrap; }
+.service-times .time-values { gap: 0.5rem; }
 .time-booked { font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .time-real { font-size: 1rem; color: var(--warn-text); }
 .time-real.delay { color: var(--uchu-red-8); }
+.time-delta { font-size: 1rem; font-style: normal; color: var(--uchu-red-8); }
 .arr-time { font-size: 0.9rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .train-status-badge { font-size: 0.8rem; font-weight: 600; color: var(--uchu-green-9); background: var(--ok-bg); padding: 0.1rem 0.4rem; border-radius: 3px; }
 .train-station-badge { font-size: 0.75rem; font-weight: 600; color: var(--uchu-green-9); background: var(--ok-bg); padding: 0.1rem 0.4rem; border-radius: 3px; white-space: nowrap; }
@@ -151,6 +159,12 @@ main { padding: 1rem 1.25rem; max-width: 680px; margin: 0 auto; }
   background: var(--uchu-blue-7);
   color: var(--uchu-yang);
 }
+.departures.dep-loading {
+  opacity: 0.45;
+  pointer-events: none;
+  cursor: wait;
+  transition: opacity 0.1s;
+}
 
 /* Journey view */
 .journey-view { display: flex; flex-direction: column; gap: 1rem; }
@@ -167,6 +181,8 @@ main { padding: 1rem 1.25rem; max-width: 680px; margin: 0 auto; }
 .leg-card.status-cancelled { border-top: 3px solid var(--alert); background: var(--alert-bg); }
 .leg-card.status-missed   { border-top: 3px solid var(--alert); background: var(--alert-bg); }
 .leg-card.status-error    { border-top: 3px solid var(--muted); }
+/* completed journey: de-emphasised, reads as past */
+.leg-card.status-completed { border-top: 3px solid var(--muted); opacity: 0.85; }
 
 /* Card header */
 .card-header {
@@ -198,6 +214,7 @@ main { padding: 1rem 1.25rem; max-width: 680px; margin: 0 auto; }
 .leg-card .badge-warn   { background: var(--warn-bg);  color: var(--warn-text); }
 .leg-card .badge-alert  { background: var(--alert-bg); color: var(--uchu-red-9); }
 .leg-card .badge-muted  { background: var(--bg);       color: var(--muted); }
+.leg-card .badge-completed { background: var(--bg);     color: var(--muted); }
 
 /* Route section: 3-column spine layout */
 .route-section { padding: 12px 14px 10px; }
@@ -205,8 +222,11 @@ main { padding: 1rem 1.25rem; max-width: 680px; margin: 0 auto; }
 .station-col { flex: 1; min-width: 0; }
 .dest-col { text-align: right; }
 .station-name { font-size: 20px; font-weight: 600; color: var(--text); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.station-status { margin-bottom: 4px; }
 
 .time-row { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+/* keep scheduled + corrected time together; only the delay badge may wrap */
+.time-values { display: inline-flex; align-items: baseline; gap: 6px; }
 .dest-col .time-row { justify-content: flex-end; }
 .time-planned { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
 .time-planned.strikethrough { text-decoration: line-through; color: var(--muted); font-size: 22px; }
@@ -240,6 +260,7 @@ main { padding: 1rem 1.25rem; max-width: 680px; margin: 0 auto; }
 .leg-card.status-cancelled .spine-dot { color: var(--alert); }
 .leg-card.status-missed   .spine-dot { color: var(--alert); }
 .leg-card.status-error    .spine-dot { color: var(--muted); }
+.leg-card.status-completed .spine-dot { color: var(--muted); }
 .spine-line { width: 2px; flex: 1; min-height: 28px; background: var(--border); }
 .spine-arrow { font-size: 10px; color: var(--muted); }
 

@@ -58,6 +58,10 @@ func main() {
 	r.HandleFunc("/calling-points/{uid}/{date}", srv.handleCallingPoints).Methods(http.MethodGet)
 	r.HandleFunc("/journey", srv.handleJourney).Methods(http.MethodGet)
 	r.HandleFunc("/leg/{n}", srv.handleLeg).Methods(http.MethodGet)
+	// Serve the icon for browsers that auto-request /favicon.ico
+	r.HandleFunc("/favicon.ico", func(w http.ResponseWriter, req *http.Request) {
+		http.ServeFile(w, req, "static/train_trip.png")
+	}).Methods(http.MethodGet)
 	r.PathPrefix("/static/").Handler(
 		http.StripPrefix("/static/", http.FileServer(http.Dir("static"))),
 	)

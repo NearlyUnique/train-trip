@@ -85,9 +85,9 @@ function initAutocomplete(stations, inputId = 'origin-input', hiddenId = 'origin
       e.preventDefault();
       activeIdx = Math.max(activeIdx - 1, 0);
       setActive(items, activeIdx);
-    } else if (e.key === 'Enter' && activeIdx >= 0) {
+    } else if (e.key === 'Enter' && items.length > 0) {
       e.preventDefault();
-      const li = items[activeIdx];
+      const li = activeIdx >= 0 ? items[activeIdx] : items[0];
       select({ crs: li.dataset.crs, name: li.dataset.name });
     } else if (e.key === 'Escape') {
       closeList();

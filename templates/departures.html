@@ -3,6 +3,16 @@
   <h2>Departures from {{.OriginName}}
     {{if .After}}after {{.After}}{{end}}
   </h2>
+  {{if .EarlierTime}}
+  <div class="dep-nav">
+    <a class="btn btn-nav"
+       hx-get="{{basePath}}/departures?origin={{.Origin}}&date={{.Date}}&time={{.EarlierTime}}&legs={{.Legs}}&to={{.To}}"
+       hx-target="#results"
+       hx-swap="innerHTML"
+       hx-push-url="false"
+       hx-on::before-request="this.closest('section').classList.add('dep-loading')">↑ Earlier trains</a>
+  </div>
+  {{end}}
   {{if not .Services}}
   <p class="empty">No departures found.</p>
   {{else}}
@@ -18,10 +28,11 @@
         <span class="dest">to {{.DestName}}</span>
       </div>
       <div class="service-times">
-        <span class="time-booked">{{.Booked}}</span>
-        {{if ne .Booked .Realtime}}
-        <span class="time-real delay">{{.Realtime}} <em>(+{{.DelayMins}}m)</em></span>
-        {{end}}
+        <span class="time-values">
+          <span class="time-booked">{{.Booked}}</span>
+          {{if ne .Booked .Realtime}}<span class="time-real delay">{{.Realtime}}</span>{{end}}
+        </span>
+        {{if ne .Booked .Realtime}}<em class="time-delta">(+{{.DelayMins}}m)</em>{{end}}
         {{if .ArrBooked}}<span class="arr-time">arr {{.ArrBooked}}</span>{{end}}
         {{if .TrainStatus}}<span class="train-status-badge">{{.TrainStatus}}</span>{{end}}
         {{if .Platform}}<span class="platform">{{.Platform}}</span>{{end}}
@@ -30,6 +41,16 @@
     </li>
     {{end}}
   </ul>
+  {{end}}
+  {{if .LaterTime}}
+  <div class="dep-nav">
+    <a class="btn btn-nav"
+       hx-get="{{basePath}}/departures?origin={{.Origin}}&date={{.Date}}&time={{.LaterTime}}&legs={{.Legs}}&to={{.To}}"
+       hx-target="#results"
+       hx-swap="innerHTML"
+       hx-push-url="false"
+       hx-on::before-request="this.closest('section').classList.add('dep-loading')">↓ Later trains</a>
+  </div>
   {{end}}
 </section>
 {{end}}
