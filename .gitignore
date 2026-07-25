@@ -4,3 +4,4 @@ build
 debug*.json
 coverage.out
 *.log
+train-trip
