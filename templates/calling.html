@@ -17,10 +17,10 @@
         </span>
       </div>
       <div class="call-actions">
-        {{$newLeg := printf "%s|%s|%s|%s" $.UID $.Date $.OriginCRS .CRS}}
+        {{$newLeg := printf "%s-%s-%s-%s" $.UID $.Date $.OriginCRS .CRS}}
         {{$allLegs := $.Legs}}
         {{if $allLegs}}
-          {{$allLegs = printf "%s,%s" $.Legs $newLeg}}
+          {{$allLegs = printf "%s~%s" $.Legs $newLeg}}
         {{else}}
           {{$allLegs = $newLeg}}
         {{end}}
@@ -28,7 +28,7 @@
                 hx-get="{{basePath}}/departures?origin={{.CRS}}&after={{.Realtime}}&date={{$.Date}}&legs={{$allLegs}}&to={{$.To}}"
                 hx-target="#results"
                 hx-swap="innerHTML"
-                hx-push-url="false">
+                hx-push-url="true">
           Change here
         </button>
         <a class="btn btn-dest"
@@ -42,4 +42,28 @@
   </ul>
   {{end}}
 </section>
+{{end}}
+
+{{define "calling_page.html"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Train Trip · Calling Points</title>
+  <link rel="icon" type="image/png" href="{{basePath}}/static/train_trip.png">
+  <link rel="stylesheet" href="{{basePath}}/static/uchu.css">
+  <link rel="stylesheet" href="{{basePath}}/static/style.css">
+  <link rel="stylesheet" href="{{basePath}}/static/tabler-icons.min.css">
+  <script src="{{basePath}}/static/htmx.min.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <a href="{{basePath}}/" class="site-title">Train Trip</a>
+    <span class="site-time">{{nowTime}}</span>
+  </header>
+  <main>
+    {{template "calling.html" .}}
+  </main>
+</body>
+</html>
 {{end}}

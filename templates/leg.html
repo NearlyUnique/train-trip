@@ -117,7 +117,7 @@
     <div class="next-train-details" {{if ge .ConnectionMins 5}}hidden{{end}}>
       <span class="time-label">Next available</span>
       {{range .NextDeps}}{{if eq .Status "cancelled"}}<span class="time-chip time-cancelled">{{.Time}}</span>{{else if eq .Status "departed"}}<span class="time-chip time-departed">{{.Time}}</span>{{else}}<a class="time-chip{{if .IsGood}} time-good{{end}}"
-         hx-get="{{basePath}}/leg/0?legs={{.UID}}|{{.Date}}|{{$.InterchangeCRS}}|{{$.DestCRS}}"
+         hx-get="{{basePath}}/leg/0?legs={{.UID}}-{{.Date}}-{{$.InterchangeCRS}}-{{$.DestCRS}}"
          hx-target="#interchange-deps-{{$.N}}"
          hx-swap="innerHTML"
          hx-push-url="false">{{.Time}}</a>{{end}}{{end}}
@@ -130,7 +130,7 @@
   <div class="missed-next">
     <span class="time-label">Next available to {{.DestName}}</span>
     {{range .NextDeps}}{{if eq .Status "cancelled"}}<span class="time-chip time-cancelled">{{.Time}}</span>{{else if eq .Status "departed"}}<span class="time-chip time-departed">{{.Time}}</span>{{else}}<a class="time-chip{{if .IsGood}} time-good{{end}}"
-       hx-get="{{basePath}}/leg/0?legs={{.UID}}|{{.Date}}|{{$.InterchangeCRS}}|{{$.DestCRS}}"
+       hx-get="{{basePath}}/leg/0?legs={{.UID}}-{{.Date}}-{{$.InterchangeCRS}}-{{$.DestCRS}}"
        hx-target="#interchange-deps-{{$.N}}"
        hx-swap="innerHTML"
        hx-push-url="false">{{.Time}}</a>{{end}}{{end}}

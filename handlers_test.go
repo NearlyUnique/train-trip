@@ -27,11 +27,11 @@ func TestStationsJSONFields(t *testing.T) {
 // --- pure function tests ---
 
 func TestParseLeg(t *testing.T) {
-	leg, err := parseLeg("A12345|20260511|SHF|MAN")
+	leg, err := parseLeg("A12345-20260511-SHF-MAN")
 	require.NoError(t, err)
 	assert.Equal(t, Leg{UID: "A12345", Date: "20260511", Origin: "SHF", Dest: "MAN"}, leg)
 
-	_, err = parseLeg("A12345|20260511|SHF") // only 3 parts
+	_, err = parseLeg("A12345-20260511-SHF") // only 3 parts
 	assert.Error(t, err)
 
 	_, err = parseLeg("")
@@ -43,11 +43,11 @@ func TestParseLegs(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, legs)
 
-	legs, err = parseLegs("A1|20260511|SHF|MAN")
+	legs, err = parseLegs("A1-20260511-SHF-MAN")
 	require.NoError(t, err)
 	assert.Len(t, legs, 1)
 
-	legs, err = parseLegs("A1|20260511|SHF|MAN,B2|20260511|MAN|LDS")
+	legs, err = parseLegs("A1-20260511-SHF-MAN~B2-20260511-MAN-LDS")
 	require.NoError(t, err)
 	assert.Len(t, legs, 2)
 	assert.Equal(t, "B2", legs[1].UID)
@@ -59,7 +59,7 @@ func TestParseLegs(t *testing.T) {
 func TestEncodeLegRoundtrip(t *testing.T) {
 	leg := Leg{UID: "X99", Date: "20260511", Origin: "SHF", Dest: "LDS"}
 	encoded := encodeLeg(leg)
-	assert.Equal(t, "X99|20260511|SHF|LDS", encoded)
+	assert.Equal(t, "X99-20260511-SHF-LDS", encoded)
 
 	decoded, err := parseLeg(encoded)
 	require.NoError(t, err)
@@ -72,7 +72,7 @@ func TestEncodeLegsRoundtrip(t *testing.T) {
 		{UID: "B2", Date: "20260511", Origin: "MAN", Dest: "LDS"},
 	}
 	encoded := encodeLegs(legs)
-	assert.Equal(t, "A1|20260511|SHF|MAN,B2|20260511|MAN|LDS", encoded)
+	assert.Equal(t, "A1-20260511-SHF-MAN~B2-20260511-MAN-LDS", encoded)
 
 	decoded, err := parseLegs(encoded)
 	require.NoError(t, err)
@@ -357,6 +357,38 @@ func TestHandleDepartures_ToFilter_CallsAt(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "Edinburgh") // service destination should appear
 }
 
+func TestHandleDepartures_FullPageWithoutHtmxHeader(t *testing.T) {
+	mock := &rttAPIMock{
+		SearchDeparturesFunc: func(crs, date, fromTime, to string) (*SearchResponse, error) {
+			return &SearchResponse{}, nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	r := httptest.NewRequest(http.MethodGet, "/departures?origin=SHF&date=20260511&time=0900", nil)
+	w := httptest.NewRecorder()
+	srv.handleDepartures(w, r)
+	body := w.Body.String()
+	assert.Contains(t, body, "<!DOCTYPE html>", "a copy-pasted /departures URL must load as a standalone page")
+	assert.Contains(t, body, "htmx.min.js")
+	assert.Contains(t, body, `id="results"`)
+}
+
+func TestHandleDepartures_FragmentWithHtmxHeader(t *testing.T) {
+	mock := &rttAPIMock{
+		SearchDeparturesFunc: func(crs, date, fromTime, to string) (*SearchResponse, error) {
+			return &SearchResponse{}, nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	r := httptest.NewRequest(http.MethodGet, "/departures?origin=SHF&date=20260511&time=0900", nil)
+	r.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+	srv.handleDepartures(w, r)
+	body := w.Body.String()
+	assert.NotContains(t, body, "<!DOCTYPE html>", "an htmx swap must receive only the fragment")
+	assert.Contains(t, body, `id="results"`)
+}
+
 // --- handleCallingPoints ---
 
 func TestHandleCallingPoints_APIError(t *testing.T) {
@@ -404,6 +436,56 @@ func TestHandleCallingPoints(t *testing.T) {
 	assert.NotContains(t, w.Body.String(), "Tebay") // PASS stops not shown
 }
 
+func TestHandleCallingPoints_FullPageWithoutHtmxHeader(t *testing.T) {
+	mock := &rttAPIMock{
+		GetServiceFunc: func(uid, date string) (*ServiceResponse, error) {
+			return &ServiceResponse{
+				ScheduleMeta: ServiceScheduleMeta{TrainReportingIdentity: "1A23", Operator: Operator{Name: "Test Rail"}},
+				Locations: []ServiceLocation{
+					svcLoc("SHF", "0900", "0900", "", ""),
+					{Location: StopLocation{ShortCodes: []string{"MAN"}, Description: "Manchester Piccadilly"},
+						TemporalData: ServiceTemporalData{DisplayAs: "CALL",
+							Arrival: &TemporalPoint{ScheduleAdvertised: iso("0945"), RealtimeForecast: iso("0950")}}},
+				},
+			}, nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	req := httptest.NewRequest(http.MethodGet, "/calling-points/A1/20260511?originCRS=SHF", nil)
+	req = mux.SetURLVars(req, map[string]string{"uid": "A1", "date": "20260511"})
+	w := httptest.NewRecorder()
+	srv.handleCallingPoints(w, req)
+	body := w.Body.String()
+	assert.Contains(t, body, "<!DOCTYPE html>", "a copy-pasted /calling-points URL must load as a standalone page")
+	assert.Contains(t, body, "htmx.min.js")
+	assert.Contains(t, body, "Manchester Piccadilly")
+}
+
+func TestHandleCallingPoints_FragmentWithHtmxHeader(t *testing.T) {
+	mock := &rttAPIMock{
+		GetServiceFunc: func(uid, date string) (*ServiceResponse, error) {
+			return &ServiceResponse{
+				ScheduleMeta: ServiceScheduleMeta{TrainReportingIdentity: "1A23", Operator: Operator{Name: "Test Rail"}},
+				Locations: []ServiceLocation{
+					svcLoc("SHF", "0900", "0900", "", ""),
+					{Location: StopLocation{ShortCodes: []string{"MAN"}, Description: "Manchester Piccadilly"},
+						TemporalData: ServiceTemporalData{DisplayAs: "CALL",
+							Arrival: &TemporalPoint{ScheduleAdvertised: iso("0945"), RealtimeForecast: iso("0950")}}},
+				},
+			}, nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	req := httptest.NewRequest(http.MethodGet, "/calling-points/A1/20260511?originCRS=SHF", nil)
+	req = mux.SetURLVars(req, map[string]string{"uid": "A1", "date": "20260511"})
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+	srv.handleCallingPoints(w, req)
+	body := w.Body.String()
+	assert.NotContains(t, body, "<!DOCTYPE html>", "an htmx swap must receive only the fragment")
+	assert.Contains(t, body, "Manchester Piccadilly")
+}
+
 // --- handleJourney ---
 
 func TestHandleCallingPoints_NoOriginFilter(t *testing.T) {
@@ -445,14 +527,14 @@ func TestHandleJourney_Valid(t *testing.T) {
 		},
 	}
 	srv := newTestServer(t, mock)
-	r := httptest.NewRequest(http.MethodGet, "/journey?legs=A1|20260511|SHF|MAN", nil)
+	r := httptest.NewRequest(http.MethodGet, "/journey?legs=A1-20260511-SHF-MAN", nil)
 	w := httptest.NewRecorder()
 	srv.handleJourney(w, r)
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), "Sheffield")
 	assert.Contains(t, w.Body.String(), "Manchester")
 	assert.Contains(t, w.Body.String(), "Continue journey")
-	assert.Contains(t, w.Body.String(), "A1|20260511|SHF|MAN")
+	assert.Contains(t, w.Body.String(), "A1-20260511-SHF-MAN")
 }
 
 func TestHandleJourney_ContinuePrefill(t *testing.T) {
@@ -462,7 +544,7 @@ func TestHandleJourney_ContinuePrefill(t *testing.T) {
 		},
 	}
 	srv := newTestServer(t, mock)
-	r := httptest.NewRequest(http.MethodGet, "/journey?legs=A1|20260511|SHF|MAN", nil)
+	r := httptest.NewRequest(http.MethodGet, "/journey?legs=A1-20260511-SHF-MAN", nil)
 	w := httptest.NewRecorder()
 	srv.handleJourney(w, r)
 	body := w.Body.String()
@@ -484,9 +566,9 @@ func TestBuildLegCards_RemoveLegsParam(t *testing.T) {
 	cards := srv.buildLegCards(legs, encodeLegs(legs))
 	require.Len(t, cards, 2)
 	// removing first leg leaves second
-	assert.Equal(t, "B2|20260511|MAN|LDS", cards[0].RemoveLegsParam)
+	assert.Equal(t, "B2-20260511-MAN-LDS", cards[0].RemoveLegsParam)
 	// removing last leg leaves first
-	assert.Equal(t, "A1|20260511|SHF|MAN", cards[1].RemoveLegsParam)
+	assert.Equal(t, "A1-20260511-SHF-MAN", cards[1].RemoveLegsParam)
 }
 
 func TestBuildLegCards_RemoveLegsParam_Single(t *testing.T) {
@@ -512,7 +594,7 @@ func TestYyyymmddToDash(t *testing.T) {
 
 func TestHandleLeg_InvalidIndex(t *testing.T) {
 	srv := newTestServer(t, &rttAPIMock{})
-	req := httptest.NewRequest(http.MethodGet, "/leg/xyz?legs=A1|20260511|SHF|MAN", nil)
+	req := httptest.NewRequest(http.MethodGet, "/leg/xyz?legs=A1-20260511-SHF-MAN", nil)
 	req = mux.SetURLVars(req, map[string]string{"n": "xyz"})
 	w := httptest.NewRecorder()
 	srv.handleLeg(w, req)
@@ -521,7 +603,7 @@ func TestHandleLeg_InvalidIndex(t *testing.T) {
 
 func TestHandleLeg_OutOfRange(t *testing.T) {
 	srv := newTestServer(t, &rttAPIMock{})
-	req := httptest.NewRequest(http.MethodGet, "/leg/5?legs=A1|20260511|SHF|MAN", nil)
+	req := httptest.NewRequest(http.MethodGet, "/leg/5?legs=A1-20260511-SHF-MAN", nil)
 	req = mux.SetURLVars(req, map[string]string{"n": "5"})
 	w := httptest.NewRecorder()
 	srv.handleLeg(w, req)
@@ -535,7 +617,7 @@ func TestHandleLeg_Valid(t *testing.T) {
 		},
 	}
 	srv := newTestServer(t, mock)
-	req := httptest.NewRequest(http.MethodGet, "/leg/0?legs=A1|20260511|SHF|MAN", nil)
+	req := httptest.NewRequest(http.MethodGet, "/leg/0?legs=A1-20260511-SHF-MAN", nil)
 	req = mux.SetURLVars(req, map[string]string{"n": "0"})
 	w := httptest.NewRecorder()
 	srv.handleLeg(w, req)
@@ -1507,7 +1589,7 @@ func TestCallingPoints_AutoRedirect_WhenToInRoute(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	redirect := w.Header().Get("HX-Redirect")
 	assert.Contains(t, redirect, "/journey")
-	assert.Contains(t, redirect, "A1|20260511|SHF|MAN")
+	assert.Contains(t, redirect, "A1-20260511-SHF-MAN")
 }
 
 func TestCallingPoints_NoRedirect_WhenToNotInRoute(t *testing.T) {
@@ -1549,14 +1631,14 @@ func TestCallingPoints_AutoRedirect_CarriesExistingLegs(t *testing.T) {
 		},
 	}
 	srv := newTestServer(t, mock)
-	existingLegs := "A1|20260511|SHF|MAN"
+	existingLegs := "A1-20260511-SHF-MAN"
 	req := httptest.NewRequest(http.MethodGet, "/calling-points/B2/20260511?originCRS=MAN&to=LDS&legs="+existingLegs, nil)
 	req = mux.SetURLVars(req, map[string]string{"uid": "B2", "date": "20260511"})
 	w := httptest.NewRecorder()
 	srv.handleCallingPoints(w, req)
 	redirect := w.Header().Get("HX-Redirect")
 	assert.Contains(t, redirect, existingLegs)
-	assert.Contains(t, redirect, "B2|20260511|MAN|LDS")
+	assert.Contains(t, redirect, "B2-20260511-MAN-LDS")
 }
 
 // --- buildLegCards FinalDest ---

@@ -33,6 +33,24 @@ func (s *server) render(w http.ResponseWriter, name string, data any) {
 	}
 }
 
+// isHtmxRequest reports whether r was issued by htmx (as opposed to a direct
+// browser navigation, e.g. a copy-pasted URL opened in a new tab).
+func isHtmxRequest(r *http.Request) bool {
+	return r.Header.Get("HX-Request") == "true"
+}
+
+// renderFragmentOrPage renders the bare htmx-swappable fragment for in-app
+// navigation, or the full standalone page when the URL is opened directly —
+// so a copy-pasted /departures or /calling-points URL renders correctly
+// rather than as an unstyled, script-less fragment.
+func (s *server) renderFragmentOrPage(w http.ResponseWriter, r *http.Request, fragment, page string, data any) {
+	if isHtmxRequest(r) {
+		s.render(w, fragment, data)
+		return
+	}
+	s.render(w, page, data)
+}
+
 func (s *server) renderError(w http.ResponseWriter, msg string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusBadGateway)
@@ -58,7 +76,9 @@ func parseDate(s string) string {
 	return todayYMD()
 }
 
-// parseLeg decodes one "uid|runDate|originCRS|destCRS" string.
+// parseLeg decodes one "uid-runDate-originCRS-destCRS" string. The "-" and "~"
+// delimiters are RFC 3986 unreserved characters, so encoded legs survive
+// copy/paste (e.g. into a shell or chat client) without needing percent-encoding.
 type Leg struct {
 	UID    string
 	Date   string // YYYYMMDD
@@ -67,7 +87,7 @@ type Leg struct {
 }
 
 func parseLeg(s string) (Leg, error) {
-	parts := strings.SplitN(s, "|", 4)
+	parts := strings.SplitN(s, "-", 4)
 	if len(parts) != 4 {
 		return Leg{}, fmt.Errorf("invalid leg %q", s)
 	}
@@ -78,7 +98,7 @@ func parseLegs(raw string) ([]Leg, error) {
 	if raw == "" {
 		return nil, nil
 	}
-	parts := strings.Split(raw, ",")
+	parts := strings.Split(raw, "~")
 	legs := make([]Leg, 0, len(parts))
 	for _, p := range parts {
 		l, err := parseLeg(strings.TrimSpace(p))
@@ -91,7 +111,7 @@ func parseLegs(raw string) ([]Leg, error) {
 }
 
 func encodeLeg(l Leg) string {
-	return l.UID + "|" + l.Date + "|" + l.Origin + "|" + l.Dest
+	return l.UID + "-" + l.Date + "-" + l.Origin + "-" + l.Dest
 }
 
 func encodeLegs(legs []Leg) string {
@@ -99,7 +119,7 @@ func encodeLegs(legs []Leg) string {
 	for i, l := range legs {
 		parts[i] = encodeLeg(l)
 	}
-	return strings.Join(parts, ",")
+	return strings.Join(parts, "~")
 }
 
 // -- view models --
@@ -341,7 +361,7 @@ func (s *server) handleDepartures(w http.ResponseWriter, r *http.Request) {
 		laterTime = addMinutesHHMM(lastBooked, 1)
 	}
 
-	s.render(w, "departures.html", DeparturesFragment{
+	s.renderFragmentOrPage(w, r, "departures.html", "departures_page.html", DeparturesFragment{
 		Origin:      origin,
 		OriginName:  stationName(origin),
 		Date:        date,
@@ -405,10 +425,10 @@ func (s *server) handleCallingPoints(w http.ResponseWriter, r *http.Request) {
 	if to != "" {
 		for _, pt := range points {
 			if pt.CRS == to {
-				newLeg := uid + "|" + date + "|" + originCRS + "|" + to
+				newLeg := encodeLeg(Leg{UID: uid, Date: date, Origin: originCRS, Dest: to})
 				allLegs := newLeg
 				if legsParam != "" {
-					allLegs = legsParam + "," + newLeg
+					allLegs = legsParam + "~" + newLeg
 				}
 				w.Header().Set("HX-Redirect", s.basePath+"/journey?legs="+allLegs)
 				w.WriteHeader(http.StatusOK)
@@ -427,7 +447,7 @@ func (s *server) handleCallingPoints(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	s.render(w, "calling.html", CallingFragment{
+	s.renderFragmentOrPage(w, r, "calling.html", "calling_page.html", CallingFragment{
 		UID:           uid,
 		Date:          date,
 		TrainID:       svc.ScheduleMeta.TrainReportingIdentity,

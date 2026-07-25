@@ -9,7 +9,7 @@
        hx-get="{{basePath}}/departures?origin={{.Origin}}&date={{.Date}}&time={{.EarlierTime}}&legs={{.Legs}}&to={{.To}}"
        hx-target="#results"
        hx-swap="innerHTML"
-       hx-push-url="false"
+       hx-push-url="true"
        hx-on::before-request="this.closest('section').classList.add('dep-loading')">↑ Earlier trains</a>
   </div>
   {{end}}
@@ -22,7 +22,7 @@
         hx-get="{{basePath}}/calling-points/{{.UID}}/{{.Date}}?originCRS={{$.Origin}}&legs={{$.Legs}}&to={{$.To}}"
         hx-target="#results"
         hx-swap="innerHTML"
-        hx-push-url="false">
+        hx-push-url="true">
       <div class="service-header">
         <span class="operator">{{.Operator}}</span>
         <span class="dest">to {{.DestName}}</span>
@@ -48,9 +48,33 @@
        hx-get="{{basePath}}/departures?origin={{.Origin}}&date={{.Date}}&time={{.LaterTime}}&legs={{.Legs}}&to={{.To}}"
        hx-target="#results"
        hx-swap="innerHTML"
-       hx-push-url="false"
+       hx-push-url="true"
        hx-on::before-request="this.closest('section').classList.add('dep-loading')">↓ Later trains</a>
   </div>
   {{end}}
 </section>
+{{end}}
+
+{{define "departures_page.html"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Train Trip · Departures</title>
+  <link rel="icon" type="image/png" href="{{basePath}}/static/train_trip.png">
+  <link rel="stylesheet" href="{{basePath}}/static/uchu.css">
+  <link rel="stylesheet" href="{{basePath}}/static/style.css">
+  <link rel="stylesheet" href="{{basePath}}/static/tabler-icons.min.css">
+  <script src="{{basePath}}/static/htmx.min.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <a href="{{basePath}}/" class="site-title">Train Trip</a>
+    <span class="site-time">{{nowTime}}</span>
+  </header>
+  <main>
+    {{template "departures.html" .}}
+  </main>
+</body>
+</html>
 {{end}}
