@@ -537,6 +537,20 @@ func TestHandleJourney_Valid(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "A1-20260511-SHF-MAN")
 }
 
+func TestHandleJourney_HasIcon(t *testing.T) {
+	mock := &rttAPIMock{
+		GetServiceFunc: func(uid, date string) (*ServiceResponse, error) {
+			return testSvcResp("SHF", "MAN", "0900", "0900", "0945", "0945"), nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	r := httptest.NewRequest(http.MethodGet, "/journey?legs=A1-20260511-SHF-MAN", nil)
+	w := httptest.NewRecorder()
+	srv.handleJourney(w, r)
+	assert.Contains(t, w.Body.String(), `rel="icon"`)
+	assert.Contains(t, w.Body.String(), `href="/favicon.ico"`)
+}
+
 func TestHandleJourney_ContinuePrefill(t *testing.T) {
 	mock := &rttAPIMock{
 		GetServiceFunc: func(uid, date string) (*ServiceResponse, error) {
