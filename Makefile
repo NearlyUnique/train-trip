@@ -33,6 +33,7 @@ test-go:
 ## Run JavaScript tests with coverage
 test-js:
 	node --experimental-test-coverage static/autocomplete.test.js
+	node --experimental-test-coverage static/poller.test.js
 
 ## Regenerate mocks (run after changing rttAPI interface)
 generate:

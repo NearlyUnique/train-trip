@@ -12,7 +12,10 @@
 <body>
   <header class="site-header">
     <a href="{{basePath}}/" class="site-title">Train Trip</a>
-    <span class="site-time">{{nowTime}}</span>
+    <span class="site-status">
+      <span class="poll-indicator" id="poll-indicator" aria-hidden="true"></span>
+      <span class="site-time">{{nowTime}}</span>
+    </span>
   </header>
   <main class="journey-view">
     {{range .Legs}}
@@ -67,28 +70,8 @@
     initAutocomplete({{stationsJSON .Stations}}, 'continue-origin-input', 'continue-origin', 'continue-ac-list', 'continue-form');
     initAutocomplete({{stationsJSON .Stations}}, 'continue-dest-input', 'continue-dest', 'continue-dest-ac-list', 'continue-form', false);
   </script>
-  <script>
-    (function () {
-      var STALE_MS = 60 * 1000;
-      var hiddenAt = null;
-      function refreshLegs() {
-        document.querySelectorAll('.leg-card').forEach(function (el) {
-          htmx.trigger(el, 'refresh');
-        });
-      }
-      document.addEventListener('visibilitychange', function () {
-        if (document.hidden) {
-          hiddenAt = Date.now();
-        } else if (hiddenAt !== null && Date.now() - hiddenAt > STALE_MS) {
-          refreshLegs();
-          hiddenAt = null;
-        }
-      });
-      window.addEventListener('pageshow', function (e) {
-        if (e.persisted) { refreshLegs(); }
-      });
-    })();
-  </script>
+  <script src="{{basePath}}/static/poller.js"></script>
+  <script>document.addEventListener("DOMContentLoaded", initPoller);</script>
 </body>
 </html>
 {{end}}

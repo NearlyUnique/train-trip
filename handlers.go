@@ -230,6 +230,20 @@ type LegCard struct {
 	InTransit        InTransitInfo
 }
 
+// NextEvent returns the HH:MM of the next time this leg's display will change
+// (next stop when in transit, otherwise departure), or "" when nothing is pending.
+func (c LegCard) NextEvent() string {
+	switch {
+	case c.Completed, c.Status == "cancelled", c.Status == "missed":
+		return ""
+	case c.InTransit.Active && c.InTransit.NextStopTime != "":
+		return c.InTransit.NextStopTime
+	case c.DepRealtime != "":
+		return c.DepRealtime
+	}
+	return c.DepBooked
+}
+
 type InTransitInfo struct {
 	Active            bool
 	LastStopName      string

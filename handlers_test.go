@@ -1713,3 +1713,42 @@ func TestBuildLegCards_FinalDest_EmptyWhenSameAsDest(t *testing.T) {
 	// Terminal is Manchester — same as destination, so FinalDest should be empty
 	assert.Equal(t, "", cards[0].FinalDest)
 }
+
+// --- LegCard.NextEvent ---
+
+func TestLegCardNextEvent(t *testing.T) {
+	tests := []struct {
+		name string
+		card LegCard
+		want string
+	}{
+		{"completed", LegCard{Completed: true, Status: "completed", DepRealtime: "09:05"}, ""},
+		{"cancelled", LegCard{Status: "cancelled", DepBooked: "09:00"}, ""},
+		{"missed", LegCard{Status: "missed", DepBooked: "09:00"}, ""},
+		{"upcoming uses realtime departure", LegCard{Status: "delayed", DepBooked: "09:00", DepRealtime: "09:05"}, "09:05"},
+		{"upcoming falls back to booked", LegCard{Status: "on-time", DepBooked: "09:00"}, "09:00"},
+		{"in transit uses next stop", LegCard{Status: "on-time", DepRealtime: "09:05", InTransit: InTransitInfo{Active: true, NextStopTime: "09:20"}}, "09:20"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.card.NextEvent())
+		})
+	}
+}
+
+func TestHandleLeg_PollingAttributes(t *testing.T) {
+	mock := &rttAPIMock{
+		GetServiceFunc: func(uid, date string) (*ServiceResponse, error) {
+			return testSvcResp("SHF", "MAN", "0900", "0905", "0945", "0950"), nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	req := httptest.NewRequest(http.MethodGet, "/leg/0?legs=A1-20260511-SHF-MAN", nil)
+	req = mux.SetURLVars(req, map[string]string{"n": "0"})
+	w := httptest.NewRecorder()
+	srv.handleLeg(w, req)
+	body := w.Body.String()
+	assert.NotContains(t, body, "every 5m")
+	assert.Contains(t, body, `hx-trigger="refresh"`)
+	assert.Contains(t, body, `data-next-event=`)
+}

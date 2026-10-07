@@ -2,7 +2,8 @@
 <div class="leg-card status-{{.Status}}"
      id="leg-{{.N}}"
      hx-get="{{basePath}}/leg/{{.N}}?legs={{.LegsParam}}"
-     hx-trigger="every 5m, refresh"
+     hx-trigger="refresh"
+     data-next-event="{{.NextEvent}}"
      hx-swap="outerHTML">
 
   <!-- Header: operator + status badge -->
