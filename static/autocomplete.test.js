@@ -1,6 +1,19 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const { wordBoundaryMatch, buildResults } = require('./autocomplete.js');
+const { wordBoundaryMatch, buildResults, focusById } = require('./autocomplete.js');
+
+test('focusById: focuses the element when found', () => {
+  let focused = false;
+  const doc = { getElementById: id => (id === 'next' ? { focus: () => { focused = true; } } : null) };
+  focusById(doc, 'next');
+  assert.ok(focused);
+});
+
+test('focusById: no-op when id is undefined or missing', () => {
+  const doc = { getElementById: () => null };
+  assert.doesNotThrow(() => focusById(doc, undefined));
+  assert.doesNotThrow(() => focusById(doc, 'missing'));
+});
 
 const STATIONS = [
   { crs: 'SHF', name: 'Sheffield' },

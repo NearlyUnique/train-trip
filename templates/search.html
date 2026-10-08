@@ -51,8 +51,8 @@
 
 <script src="{{basePath}}/static/autocomplete.js"></script>
 <script>
-  initAutocomplete({{stationsJSON .Stations}});
-  initAutocomplete({{stationsJSON .Stations}}, 'dest-input', 'dest', 'dest-ac-list', 'search-form', false);
+  initAutocomplete({{stationsJSON .Stations}}, 'origin-input', 'origin', 'ac-list', 'search-form', true, 'dest-input');
+  initAutocomplete({{stationsJSON .Stations}}, 'dest-input', 'dest', 'dest-ac-list', 'search-form', false, 'date');
 </script>
 <script>
   (function () {

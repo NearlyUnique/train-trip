@@ -37,10 +37,11 @@
                  placeholder="e.g. St Pancras or STP"
                  autocomplete="off"
                  aria-autocomplete="list"
-                 aria-controls="continue-ac-list"
+                 aria-controls="continue-ac-list"{{if .ContinueOriginName}}
+                 value="{{.ContinueOriginName}}"{{end}}
                  aria-expanded="false"
                  aria-haspopup="listbox">
-          <input id="continue-origin" name="origin" type="hidden">
+          <input id="continue-origin" name="origin" type="hidden"{{if .ContinueOrigin}} value="{{.ContinueOrigin}}"{{end}}>
           <ul class="ac-list" id="continue-ac-list" hidden></ul>
         </div>
         <label for="continue-dest-input">To <span class="label-optional">(optional)</span></label>
@@ -67,8 +68,8 @@
   </main>
   <script src="{{basePath}}/static/autocomplete.js"></script>
   <script>
-    initAutocomplete({{stationsJSON .Stations}}, 'continue-origin-input', 'continue-origin', 'continue-ac-list', 'continue-form');
-    initAutocomplete({{stationsJSON .Stations}}, 'continue-dest-input', 'continue-dest', 'continue-dest-ac-list', 'continue-form', false);
+    initAutocomplete({{stationsJSON .Stations}}, 'continue-origin-input', 'continue-origin', 'continue-ac-list', 'continue-form', true, 'continue-dest-input');
+    initAutocomplete({{stationsJSON .Stations}}, 'continue-dest-input', 'continue-dest', 'continue-dest-ac-list', 'continue-form', false, 'continue-date');
   </script>
   <script src="{{basePath}}/static/poller.js"></script>
   <script>document.addEventListener("DOMContentLoaded", initPoller);</script>

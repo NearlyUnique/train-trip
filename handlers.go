@@ -182,6 +182,9 @@ type JourneyPage struct {
 	Stations     []Station
 	ContinueDate string // YYYY-MM-DD, pre-filled from last leg arrival
 	ContinueTime string // HH:MM, pre-filled from last leg arrival
+
+	ContinueOrigin     string // CRS of last leg destination
+	ContinueOriginName string
 }
 
 // NextDep is an alternative departure time for a tight-connection leg.
@@ -492,9 +495,16 @@ func (s *server) handleJourney(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cards := s.buildLegCards(legs, legsParam)
-	page := JourneyPage{Legs: cards, LegsParam: legsParam, Stations: stations}
+	lastLeg := legs[len(legs)-1]
+	page := JourneyPage{
+		Legs:               cards,
+		LegsParam:          legsParam,
+		Stations:           stations,
+		ContinueOrigin:     lastLeg.Dest,
+		ContinueOriginName: stationName(lastLeg.Dest),
+	}
 	if last := cards[len(cards)-1]; last.ArrRealtime != "" {
-		page.ContinueDate = yyyymmddToDash(legs[len(legs)-1].Date)
+		page.ContinueDate = yyyymmddToDash(lastLeg.Date)
 		page.ContinueTime = last.ArrRealtime
 	}
 	s.render(w, "journey.html", page)

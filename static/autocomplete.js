@@ -17,7 +17,12 @@ function buildResults(stations, raw) {
   return [...crsHits, ...nameHits].slice(0, 10);
 }
 
-function initAutocomplete(stations, inputId = 'origin-input', hiddenId = 'origin', listId = 'ac-list', formId = 'search-form', required = true) {
+function focusById(doc, id) {
+  const el = id && doc.getElementById(id);
+  if (el) el.focus();
+}
+
+function initAutocomplete(stations, inputId = 'origin-input', hiddenId = 'origin', listId = 'ac-list', formId = 'search-form', required = true, nextId = undefined) {
   const searchInput = document.getElementById(inputId);
   const hiddenInput = document.getElementById(hiddenId);
   const list        = document.getElementById(listId);
@@ -55,6 +60,7 @@ function initAutocomplete(stations, inputId = 'origin-input', hiddenId = 'origin
     hiddenInput.value = s.crs;
     searchInput.setCustomValidity('');
     closeList();
+    focusById(document, nextId);
   }
 
   function setActive(items, idx) {
@@ -106,5 +112,5 @@ function initAutocomplete(stations, inputId = 'origin-input', hiddenId = 'origin
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { wordBoundaryMatch, buildResults };
+  module.exports = { wordBoundaryMatch, buildResults, focusById };
 }

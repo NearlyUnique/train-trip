@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"testing"
 
 	"github.com/gorilla/mux"
@@ -564,6 +565,22 @@ func TestHandleJourney_ContinuePrefill(t *testing.T) {
 	body := w.Body.String()
 	assert.Contains(t, body, `value="2026-05-11"`)
 	assert.Contains(t, body, `value="09:50"`)
+}
+
+func TestHandleJourney_ContinueOriginPrefill(t *testing.T) {
+	mock := &rttAPIMock{
+		GetServiceFunc: func(uid, date string) (*ServiceResponse, error) {
+			return testSvcResp("SHF", "MAN", "0900", "0900", "0945", "0950"), nil
+		},
+	}
+	srv := newTestServer(t, mock)
+	r := httptest.NewRequest(http.MethodGet, "/journey?legs=A1-20260511-SHF-MAN", nil)
+	w := httptest.NewRecorder()
+	srv.handleJourney(w, r)
+	body := w.Body.String()
+	assert.Contains(t, body, `id="continue-origin-input"`)
+	assert.Regexp(t, `id="continue-origin-input"[^>]*value="`+regexp.QuoteMeta(stationName("MAN"))+`"`, body)
+	assert.Regexp(t, `id="continue-origin"[^>]*value="MAN"`, body)
 }
 
 func TestBuildLegCards_RemoveLegsParam(t *testing.T) {
