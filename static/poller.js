@@ -39,14 +39,37 @@ function eventTimesFromDom(nowMs) {
   return times;
 }
 
+// createFlightTracker tracks elements with a request in flight. Detached
+// elements are ignored, as htmx may never report their completion.
+function createFlightTracker() {
+  var els = new Set();
+  return {
+    start: function (el) { els.add(el); },
+    end: function (el) { els.delete(el); },
+    reset: function () { els.clear(); },
+    active: function () {
+      els.forEach(function (el) {
+        if (!el.isConnected) { els.delete(el); }
+      });
+      return els.size > 0;
+    },
+  };
+}
+
 function initPoller() {
   var timer = null;
   var lastPoll = Date.now();
-  var inFlight = 0;
+  var flights = createFlightTracker();
   var indicator = document.getElementById('poll-indicator');
 
   function setIndicator() {
-    if (indicator) { indicator.classList.toggle('polling', inFlight > 0); }
+    if (indicator) { indicator.classList.toggle('polling', flights.active()); }
+  }
+  // Requests started before the page was hidden may never report completion.
+  function resume() {
+    flights.reset();
+    setIndicator();
+    poll();
   }
   function isLeg(e) {
     return e.detail && e.detail.elt && e.detail.elt.classList.contains('leg-card');
@@ -70,10 +93,10 @@ function initPoller() {
 
   htmx.config.timeout = POLL_TIMEOUT_MS;
   document.addEventListener('htmx:beforeRequest', function (e) {
-    if (isLeg(e)) { inFlight++; setIndicator(); }
+    if (isLeg(e)) { flights.start(e.detail.elt); setIndicator(); }
   });
   document.addEventListener('htmx:afterRequest', function (e) {
-    if (isLeg(e)) { inFlight = Math.max(0, inFlight - 1); setIndicator(); }
+    if (isLeg(e)) { flights.end(e.detail.elt); setIndicator(); }
   });
   // Swapped-in cards carry fresh event times, so re-plan the next poll.
   document.addEventListener('htmx:afterSwap', function (e) {
@@ -83,18 +106,20 @@ function initPoller() {
     if (document.hidden) {
       stop();
     } else if (Date.now() - lastPoll > POLL_MIN_MS) {
-      poll();
+      resume();
     } else {
+      flights.reset();
+      setIndicator();
       schedule();
     }
   });
   window.addEventListener('pageshow', function (e) {
-    if (e.persisted) { poll(); }
+    if (e.persisted) { resume(); }
   });
 
   if (!document.hidden) { schedule(); }
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { nextDelayMs, parseClock };
+  module.exports = { nextDelayMs, parseClock, createFlightTracker };
 }

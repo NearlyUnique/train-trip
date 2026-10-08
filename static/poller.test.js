@@ -1,6 +1,40 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const { nextDelayMs, parseClock } = require('./poller.js');
+const { nextDelayMs, parseClock, createFlightTracker } = require('./poller.js');
+
+test('flightTracker: start then end is inactive', () => {
+  const t = createFlightTracker();
+  const el = { isConnected: true };
+  t.start(el);
+  assert.equal(t.active(), true);
+  t.end(el);
+  assert.equal(t.active(), false);
+});
+
+test('flightTracker: detached element is not counted', () => {
+  const t = createFlightTracker();
+  const el = { isConnected: true };
+  t.start(el);
+  el.isConnected = false;
+  assert.equal(t.active(), false);
+});
+
+test('flightTracker: reset clears in-flight elements', () => {
+  const t = createFlightTracker();
+  t.start({ isConnected: true });
+  t.reset();
+  assert.equal(t.active(), false);
+});
+
+test('flightTracker: stays active while another element is in flight', () => {
+  const t = createFlightTracker();
+  const a = { isConnected: true };
+  const b = { isConnected: true };
+  t.start(a);
+  t.start(b);
+  t.end(a);
+  assert.equal(t.active(), true);
+});
 
 const MIN = 60 * 1000;
 const BASE = 5 * MIN;
